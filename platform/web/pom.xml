@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>io.nexus</groupId><artifactId>nexus</artifactId><version>0.1.0-SNAPSHOT</version><relativePath>../../pom.xml</relativePath></parent>
+  <artifactId>nexus-web</artifactId>
+  <description>Browser runtime: the core compiled to JavaScript with TeaVM, storage in memory.</description>
+
+  <properties>
+    <teavm.version>0.16.0</teavm.version>
+  </properties>
+
+  <dependencies>
+    <dependency><groupId>io.nexus</groupId><artifactId>nexus-contracts</artifactId></dependency>
+    <dependency><groupId>org.teavm</groupId><artifactId>teavm-classlib</artifactId><version>${teavm.version}</version><scope>provided</scope></dependency>
+    <dependency><groupId>org.teavm</groupId><artifactId>teavm-jso-apis</artifactId><version>${teavm.version}</version><scope>provided</scope></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><scope>test</scope></dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Java to JavaScript. Fails the build if the core uses a library function TeaVM does not support. -->
+      <plugin>
+        <groupId>org.teavm</groupId><artifactId>teavm-maven-plugin</artifactId><version>${teavm.version}</version>
+        <executions>
+          <execution>
+            <goals><goal>compile</goal></goals>
+            <phase>package</phase>
+            <configuration>
+              <mainClass>io.nexus.web.WebRuntime</mainClass>
+              <targetType>JAVASCRIPT</targetType>
+              <jsModuleType>ES2015</jsModuleType>
+              <targetFileName>nexus-core.js</targetFileName>
+              <minifying>true</minifying>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Runs the compiled module in Node and compares its output with what the JVM test produced. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.7.0</version>
+        <executions>
+          <execution>
+            <id>js-equals-jvm</id>
+            <goals><goal>exec</goal></goals>
+            <phase>verify</phase>
+            <configuration>
+              <executable>node</executable>
+              <arguments>
+                <argument>${project.basedir}/src/test/js/smoke.mjs</argument>
+                <argument>${project.build.directory}/javascript/nexus-core.js</argument>
+                <argument>${project.build.directory}/selftest-jvm.txt</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

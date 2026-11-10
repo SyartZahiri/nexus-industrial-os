@@ -26,6 +26,7 @@
     <module>FlowPilot</module>
     <module>SmartFactory</module>
     <module>platform/app</module>
+    <module>platform/web</module>
   </modules>
 
   <dependencyManagement>
