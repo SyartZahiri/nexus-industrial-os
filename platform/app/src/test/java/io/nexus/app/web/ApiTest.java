@@ -113,6 +113,14 @@ class ApiTest {
   }
 
   @Test
+  void eventsOfEarlierRunsAreNotMixedIntoTheCurrentRun(@Autowired io.nexus.app.event.SimRun run) throws Exception {
+    events.publish("order.created", "smartfactory", Severity.INFO, "PO-OLD", Map.of());
+    run.restart(run.seed());
+    events.publish("order.created", "smartfactory", Severity.INFO, "PO-NEW", Map.of());
+    assertThat(get("/api/v1/events").body()).contains("PO-NEW").doesNotContain("PO-OLD");
+  }
+
+  @Test
   void limitIsClampedInsteadOfFailing() throws Exception {
     assertThat(get("/api/v1/events?limit=999999").statusCode()).isEqualTo(200);
     assertThat(get("/api/v1/events?limit=0").statusCode()).isEqualTo(200);

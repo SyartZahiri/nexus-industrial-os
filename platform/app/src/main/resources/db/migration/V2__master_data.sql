@@ -43,11 +43,13 @@ insert into bom_item (product_id, seq, material_id, qty) values
   ('MT7',   1, 'RM-MT7',   1), ('MT7',   2, 'KIT-MT7',   1);
 
 insert into storage_location (id, name, zone, dock_node, capacity) values
-  ('RAW-A', 'Rohlager Regal A',    'RAW',      'D_RAW', 120),
+  -- capacity covers every material at its replenishment maximum (reorder_point + reorder_qty), see SchemaTest
+  ('RAW-A', 'Rohlager Regal A',    'RAW',      'D_RAW', 240),
   ('RAW-B', 'Rohlager Regal B',    'RAW',      'D_RAW', 120),
   ('FG-A',  'Fertiglager Regal A', 'FINISHED', 'D_FG',  160);
 
+-- finished goods start with the stock of the former engine (6 / 4 / 8 / 3)
 insert into stock (material_id, location_id, on_hand) values
   ('RM-GH200', 'RAW-A', 30), ('RM-AW50', 'RAW-A', 30), ('RM-FP12', 'RAW-A', 30), ('RM-MT7', 'RAW-A', 30),
   ('KIT-GH200', 'RAW-B', 24), ('KIT-MT7', 'RAW-B', 24),
-  ('FG-GH200', 'FG-A', 0), ('FG-AW50', 'FG-A', 0), ('FG-FP12', 'FG-A', 0), ('FG-MT7', 'FG-A', 0);
+  ('FG-GH200', 'FG-A', 6), ('FG-AW50', 'FG-A', 4), ('FG-FP12', 'FG-A', 8), ('FG-MT7', 'FG-A', 3);

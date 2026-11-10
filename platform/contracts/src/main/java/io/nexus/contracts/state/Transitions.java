@@ -17,9 +17,9 @@ public final class Transitions<S extends Enum<S>> {
     return allowed.getOrDefault(from, Set.of()).contains(to);
   }
 
-  /** Returns {@code to} if the transition is legal, otherwise throws. */
+  /** Returns {@code to} if the transition is legal, otherwise throws. Staying in the same state is a no-op. */
   public S move(String entityId, S from, S to) {
-    if (!can(from, to)) throw new IllegalTransitionException(entityId, from, to);
+    if (from != to && !can(from, to)) throw new IllegalTransitionException(entityId, from, to);
     return to;
   }
 

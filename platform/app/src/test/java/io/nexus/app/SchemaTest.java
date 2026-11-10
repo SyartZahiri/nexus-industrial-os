@@ -57,6 +57,18 @@ class SchemaTest {
     assertThat(deadEnds).isZero();
   }
 
+  /** Replenishment tops a material up to at most reorder_point + reorder_qty; that must fit where it is stored. */
+  @Test
+  void everyLocationCanHoldItsMaterialsAtTheirReplenishmentMaximum() {
+    int tooSmall = jdbc.sql("""
+        select count(*) from storage_location l
+        where l.capacity < (
+          select coalesce(sum(greatest(s.on_hand, m.reorder_point + m.reorder_qty)), 0)
+          from stock s join material m on m.id = s.material_id where s.location_id = l.id)
+        """).query(Integer.class).single();
+    assertThat(tooSmall).isZero();
+  }
+
   @Test
   void databaseRejectsReservingMoreThanOnHand() {
     assertThatThrownBy(() -> jdbc.sql(

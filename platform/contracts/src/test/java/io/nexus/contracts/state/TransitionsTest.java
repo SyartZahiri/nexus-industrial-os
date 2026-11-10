@@ -69,7 +69,24 @@ class TransitionsTest {
     assertThat(r.can(MachineStatus.FAULT, MachineStatus.RUNNING)).isFalse();
     assertThat(r.can(MachineStatus.FAULT, MachineStatus.REPAIR)).isTrue();
     assertThat(r.can(MachineStatus.REPAIR, MachineStatus.RUNNING)).isTrue();
-    assertThat(r.can(MachineStatus.RUNNING, MachineStatus.MAINTENANCE)).isFalse();
+  }
+
+  /** The simulation is the authority on machine state; these are transitions the former engine performs. */
+  @Test
+  void machineAllowsEveryTransitionTheEnginePerforms() {
+    var r = MachineStatus.RULES;
+    for (MachineStatus s : EnumSet.of(MachineStatus.RUNNING, MachineStatus.SETUP, MachineStatus.BLOCKED)) {
+      assertThat(r.can(s, MachineStatus.MAINTENANCE)).as(s + " → MAINTENANCE").isTrue();
+      assertThat(r.can(MachineStatus.MAINTENANCE, s)).as("MAINTENANCE → " + s).isTrue();
+    }
+    assertThat(r.can(MachineStatus.MAINTENANCE, MachineStatus.FAULT)).isTrue();
+  }
+
+  @Test
+  void movingToTheSameStateIsANoOp() {
+    assertThat(MachineStatus.RULES.move("CNC-01", MachineStatus.RUNNING, MachineStatus.RUNNING))
+        .isEqualTo(MachineStatus.RUNNING);
+    assertThat(OrderStatus.RULES.move("PO-1", COMPLETED, COMPLETED)).isEqualTo(COMPLETED);
   }
 
   @Test

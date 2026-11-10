@@ -135,8 +135,10 @@ declare
   total int;
   cap   int;
 begin
+  -- Lock the location first: concurrent transactions changing different stock rows of the same location
+  -- are serialised here, so each one sums the other's committed rows.
+  select capacity into cap from storage_location where id = new.location_id for no key update;
   select coalesce(sum(on_hand), 0) into total from stock where location_id = new.location_id;
-  select capacity into cap from storage_location where id = new.location_id;
   if total > cap then
     raise exception 'Kapazität von Lagerplatz % überschritten: % > %', new.location_id, total, cap
       using errcode = 'check_violation';

@@ -18,13 +18,15 @@ class EventController {
 
   private final JdbcClient jdbc;
   private final ObjectMapper json;
+  private final SimRun run;
 
-  EventController(JdbcClient jdbc, ObjectMapper json) {
+  EventController(JdbcClient jdbc, ObjectMapper json, SimRun run) {
     this.jdbc = jdbc;
     this.json = json;
+    this.run = run;
   }
 
-  /** Events in ascending order. Pass the last seen seq as {@code after} to page forward. */
+  /** Events of the current simulation run in ascending order. Pass the last seen seq as {@code after} to page forward. */
   @GetMapping
   List<EventView> events(@RequestParam(required = false) String type,
                          @RequestParam(required = false) String source,
@@ -34,14 +36,15 @@ class EventController {
     return jdbc.sql("""
         select seq, event_id, sim_time_ms, type, source, severity, correlation_id, payload::text as payload
         from event
-        where seq > :after
+        where run_id = :run
+          and seq > :after
           and (cast(:type as text) is null or type = :type)
           and (cast(:source as text) is null or source = :source)
           and (cast(:corr as text) is null or correlation_id = :corr)
         order by seq
         limit :limit
         """)
-        .param("after", after).param("type", type).param("source", source).param("corr", correlationId)
+        .param("run", run.id()).param("after", after).param("type", type).param("source", source).param("corr", correlationId)
         .param("limit", Math.clamp(limit, 1, 1000))
         .query((rs, i) -> new EventView(rs.getLong("seq"), rs.getObject("event_id", UUID.class),
             rs.getLong("sim_time_ms"), rs.getString("type"), rs.getString("source"), rs.getString("severity"),
