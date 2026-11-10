@@ -1,0 +1,164 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/600.css';
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  --color-ink-0: #06080b;
+  --color-ink-1: #0a0d11;
+  --color-ink-2: #0e1217;
+  --color-ink-3: #141a21;
+  --color-ink-4: #1b222b;
+  --color-line: #1e2630;
+  --color-line-2: #2a3440;
+  --color-txt-1: #e6eaef;
+  --color-txt-2: #a3adb9;
+  --color-txt-3: #848f9c;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --color-accent: #5eead4;
+  --color-series: #3987e5;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+#root {
+  height: 100%;
+  height: 100dvh;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  background: var(--color-ink-0);
+  color: var(--color-txt-1);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Controls: instant taps, no text selection / callouts on long-press */
+button,
+a,
+[role='button'],
+[role='tab'],
+[role='switch'] {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* One consistent, high-contrast keyboard focus ring (WCAG 2.4.7 / 1.4.11) */
+:focus-visible {
+  outline: 2px solid #5eead4;
+  outline-offset: 2px;
+}
+
+/* iOS zooms into inputs below 16px, so touch devices get 16px inputs */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* thin, recessive scrollbars */
+.scroll-thin {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #2a3440 transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: #2a3440;
+  border-radius: 3px;
+}
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: #1e2630;
+  outline: none;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e6eaef;
+  border: 3px solid #0a0d11;
+  box-shadow: 0 0 0 1px #5eead4;
+  cursor: pointer;
+}
+input[type='range']::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e6eaef;
+  border: 3px solid #0a0d11;
+  box-shadow: 0 0 0 1px #5eead4;
+  cursor: pointer;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.pulse-dot {
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot {
+    animation: none;
+  }
+  /* keep colour/opacity feedback, drop movement */
+  *,
+  *::before,
+  *::after {
+    transition-property: color, background-color, border-color, opacity !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
