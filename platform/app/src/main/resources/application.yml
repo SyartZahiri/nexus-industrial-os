@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: nexus
+  profiles:
+    default: embedded
+  datasource:
+    url: ${NEXUS_DB_URL:jdbc:postgresql://localhost:5432/nexus}
+    username: ${NEXUS_DB_USER:nexus}
+    password: ${NEXUS_DB_PASSWORD:nexus}
+nexus:
+  sim:
+    seed: 4711
