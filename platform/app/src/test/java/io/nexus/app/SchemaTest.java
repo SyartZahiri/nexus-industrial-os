@@ -28,6 +28,69 @@ class SchemaTest {
     assertThat(count("routing_step")).isEqualTo(11);
     assertThat(count("agv")).isEqualTo(6);
     assertThat(count("material")).isEqualTo(10);
+    assertThat(count("conveyor")).isEqualTo(4);
+    assertThat(count("charger")).isEqualTo(6);
+  }
+
+  @Test
+  void everyProductHasAFinishedMaterialOfKindFinished() {
+    int wrong = jdbc.sql("""
+        select count(*) from product p join material m on m.id = p.finished_material_id where m.kind <> 'FINISHED'
+        """).query(Integer.class).single();
+    assertThat(wrong).isZero();
+  }
+
+  // One statement per test: PostgreSQL aborts the transaction after the first violation.
+  @Test
+  void databaseRejectsUnknownMachineStatus() {
+    assertThatThrownBy(() -> jdbc.sql("update machine set status = 'KAPUTT' where id = 'CNC-01'").update())
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  void databaseRejectsUnknownAgvStatus() {
+    assertThatThrownBy(() -> jdbc.sql("update agv set status = 'KAPUTT' where id = 'AGV-01'").update())
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  void databaseRejectsUnknownOrderStatus() {
+    assertThatThrownBy(() -> jdbc.sql("""
+        insert into production_order (id, product_id, quantity, priority, status, due_at_ms, created_at_ms)
+        values ('PO-X', 'GH200', 1, 'NORMAL', 'KAPUTT', 0, 0)
+        """).update()).isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  void databaseRejectsUnknownTransportStatus() {
+    assertThatThrownBy(() -> jdbc.sql("""
+        insert into transport_order (id, request_id, kind, qty, from_node, to_node, priority, status, created_at_ms)
+        values ('TO-X', 'TO-X', 'SUPPLY', 1, 'D_RAW', 'D_CNC01', 'NORMAL', 'KAPUTT', 0)
+        """).update()).isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  /** A status the enum knows but the database rejects would only fail at runtime, in the middle of a flow. */
+  @Test
+  void statusChecksAcceptEveryEnumValue() {
+    assertChecksCover("transport_order", io.nexus.contracts.state.TransportStatus.values());
+    assertChecksCover("machine", io.nexus.contracts.state.MachineStatus.values());
+    assertChecksCover("agv", io.nexus.contracts.state.AgvStatus.values());
+    assertChecksCover("production_order", io.nexus.contracts.state.OrderStatus.values());
+  }
+
+  private void assertChecksCover(String table, Enum<?>[] values) {
+    String checks = String.join(" ", jdbc.sql("""
+        select pg_get_constraintdef(oid) from pg_constraint
+        where conrelid = cast(:t as regclass) and contype = 'c'
+        """).param("t", table).query(String.class).list());
+    for (Enum<?> v : values) assertThat(checks).as(table + " accepts " + v).contains("'" + v.name() + "'");
+  }
+
+  @Test
+  void markerForAMissingEventIsRejected() {
+    assertThatThrownBy(() -> jdbc.sql(
+        "insert into processed_event (consumer, event_id) values ('a', 'gibt-es-nicht')").update())
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test

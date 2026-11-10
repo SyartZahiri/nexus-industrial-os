@@ -206,11 +206,3 @@ insert into graph_edge (id, from_node, to_node, length) values
   ('D_CH5_3>LX2_2', 'D_CH5_3', 'LX2_2', 2.195),
   ('J_14.6_3>J_14.6_-3', 'J_14.6_3', 'J_14.6_-3', 6.000);
 
--- AGVs start at the charging docks.
-insert into agv (id, name, node_id) values
-  ('AGV-01', 'AGV 1', 'D_CH1'),
-  ('AGV-02', 'AGV 2', 'D_CH2'),
-  ('AGV-03', 'AGV 3', 'D_CH3'),
-  ('AGV-04', 'AGV 4', 'D_CH4'),
-  ('AGV-05', 'AGV 5', 'D_CH5'),
-  ('AGV-06', 'AGV 6', 'D_CH6');

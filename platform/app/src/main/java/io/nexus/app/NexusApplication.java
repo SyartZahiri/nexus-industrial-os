@@ -2,7 +2,7 @@ package io.nexus.app;
 
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import java.io.IOException;
-import javax.sql.DataSource;
+import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
@@ -24,9 +24,13 @@ public class NexusApplication {
       return EmbeddedPostgres.builder().start();
     }
 
-    @Bean
-    DataSource dataSource(EmbeddedPostgres pg) {
-      return pg.getPostgresDatabase();
+    /** Pooled: the event bus opens a transaction per consumer and event, a fresh connection each time is too slow. */
+    @Bean(destroyMethod = "close")
+    HikariDataSource dataSource(EmbeddedPostgres pg) {
+      var ds = new HikariDataSource();
+      ds.setJdbcUrl(pg.getJdbcUrl("postgres", "postgres"));
+      ds.setUsername("postgres");
+      return ds;
     }
   }
 }

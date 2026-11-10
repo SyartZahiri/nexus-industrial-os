@@ -4,14 +4,24 @@ create table sim_run (
   started_at timestamptz not null default now()
 );
 
--- SmartFactory -------------------------------------------------------------
-create table product (
-  id         text primary key,
-  name       text not null,
-  short_name text not null,
-  color      text not null
+-- Path graph (FlowPilot). First, because machines, conveyors and storage refer to its nodes. ----------
+create table graph_node (
+  id   text primary key,
+  x    double precision not null,
+  z    double precision not null,
+  dock boolean not null default false
 );
 
+create table graph_edge (
+  id        text primary key,
+  from_node text not null references graph_node,
+  to_node   text not null references graph_node,
+  length    double precision not null check (length > 0),
+  blocked   boolean not null default false,
+  unique (from_node, to_node)
+);
+
+-- SmartFactory -------------------------------------------------------------
 create table material (
   id            text primary key,
   name          text not null,
@@ -20,17 +30,41 @@ create table material (
   reorder_qty   int  not null default 0 check (reorder_qty >= 0)
 );
 
+create table product (
+  id                   text primary key,
+  name                 text not null,
+  short_name           text not null,
+  color                text not null,
+  -- the material under which finished units are stocked
+  finished_material_id text not null references material
+);
+
 create table machine (
-  id           text primary key,
-  name         text not null,
-  kind         text not null check (kind in ('CNC', 'ROBOT', 'QC')),
-  model        text not null,
-  capabilities text[] not null,
-  pos_x        double precision not null,
-  pos_z        double precision not null,
-  dock_node    text,
-  status       text not null default 'IDLE',
-  version      int  not null default 0
+  id            text primary key,
+  name          text not null,
+  kind          text not null check (kind in ('CNC', 'ROBOT', 'QC')),
+  model         text not null,
+  capabilities  text[] not null,
+  pos_x         double precision not null,
+  pos_z         double precision not null,
+  -- where AGVs deliver material for this machine
+  dock_node     text references graph_node,
+  -- where AGVs pick up finished parts; null if the machine hands over to a conveyor
+  out_dock_node text references graph_node,
+  status        text not null default 'IDLE' check (status in
+                  ('IDLE', 'SETUP', 'RUNNING', 'BLOCKED', 'STOPPED', 'FAULT', 'REPAIR', 'MAINTENANCE')),
+  version       int  not null default 0
+);
+
+create table conveyor (
+  id        text primary key,
+  name      text not null,
+  dock_node text references graph_node,
+  start_x   double precision not null,
+  start_z   double precision not null,
+  end_x     double precision not null,
+  end_z     double precision not null,
+  speed     double precision not null check (speed > 0)
 );
 
 create table routing_step (
@@ -64,7 +98,8 @@ create table production_order (
   product_id      text   not null references product,
   quantity        int    not null check (quantity > 0),
   priority        text   not null check (priority in ('NORMAL', 'HOCH', 'EILIG')),
-  status          text   not null default 'CREATED',
+  status          text   not null default 'CREATED' check (status in
+                    ('CREATED', 'MATERIAL_PENDING', 'SHORTAGE', 'RELEASED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
   due_at_ms       bigint not null,
   created_at_ms   bigint not null,
   completed_at_ms bigint,
@@ -79,7 +114,8 @@ create table operation (
   seq              int  not null,
   process          text not null,
   machine_id       text references machine,
-  status           text not null default 'PLANNED',
+  status           text not null default 'PLANNED' check (status in
+                     ('PLANNED', 'WAITING_MATERIAL', 'READY', 'RUNNING', 'DONE', 'CANCELLED')),
   planned_start_ms bigint,
   planned_end_ms   bigint,
   started_at_ms    bigint,
@@ -97,27 +133,16 @@ create table machine_state_interval (
 create index machine_state_interval_machine on machine_state_interval (machine_id, from_ms);
 
 -- FlowPilot ----------------------------------------------------------------
-create table graph_node (
-  id   text primary key,
-  x    double precision not null,
-  z    double precision not null,
-  dock boolean not null default false
-);
-
-create table graph_edge (
-  id        text primary key,
-  from_node text not null references graph_node,
-  to_node   text not null references graph_node,
-  length    double precision not null check (length > 0),
-  blocked   boolean not null default false,
-  unique (from_node, to_node)
+create table charger (
+  id      text primary key,
+  node_id text not null references graph_node
 );
 
 create table storage_location (
   id        text primary key,
   name      text not null,
   zone      text not null check (zone in ('RAW', 'FINISHED')),
-  dock_node text not null,
+  dock_node text not null references graph_node,
   capacity  int  not null check (capacity > 0)
 );
 
@@ -151,21 +176,24 @@ create constraint trigger stock_capacity after insert or update of on_hand on st
 
 create table reservation (
   id            text primary key,
-  request_id    text   not null unique,
+  -- one request may reserve several materials; idempotency is checked per request in the application
+  request_id    text   not null,
   order_id      text   not null,
   material_id   text   not null,
   location_id   text   not null,
   qty           int    not null check (qty > 0),
   status        text   not null default 'ACTIVE' check (status in ('ACTIVE', 'RELEASED', 'CONSUMED')),
   created_at_ms bigint not null,
-  foreign key (material_id, location_id) references stock
+  foreign key (material_id, location_id) references stock,
+  unique (request_id, material_id)
 );
 
 create table agv (
   id       text primary key,
   name     text not null,
   capacity int  not null default 1 check (capacity > 0),
-  status   text not null default 'IDLE',
+  status   text not null default 'IDLE' check (status in
+             ('IDLE', 'TO_PICKUP', 'LOADING', 'TO_DROP', 'UNLOADING', 'TO_CHARGE', 'CHARGING', 'FAULT', 'OFFLINE')),
   node_id  text not null references graph_node,
   battery  double precision not null default 100 check (battery between 0 and 100),
   enabled  boolean not null default true,
@@ -182,7 +210,8 @@ create table transport_order (
   from_node      text   not null references graph_node,
   to_node        text   not null references graph_node,
   priority       text   not null check (priority in ('NORMAL', 'HOCH', 'EILIG')),
-  status         text   not null default 'CREATED',
+  status         text   not null default 'CREATED' check (status in
+                   ('CREATED', 'ASSIGNED', 'TO_PICKUP', 'LOADING', 'IN_TRANSIT', 'UNLOADING', 'DELIVERED', 'FAILED', 'CANCELLED')),
   agv_id         text references agv,
   reservation_id text references reservation,
   created_at_ms  bigint not null,
@@ -194,7 +223,7 @@ create unique index transport_one_active_per_agv on transport_order (agv_id)
 
 -- Events ---------------------------------------------------------------------
 create table event (
-  event_id       uuid primary key,
+  event_id       text primary key,
   seq            bigserial unique,
   run_id         bigint not null references sim_run,
   sim_time_ms    bigint not null,
@@ -209,6 +238,14 @@ create index event_correlation on event (correlation_id, seq);
 
 create table processed_event (
   consumer text not null,
-  event_id uuid not null,
+  event_id text not null references event,
+  primary key (consumer, event_id)
+);
+
+create table event_delivery_failure (
+  consumer   text not null,
+  event_id   text not null references event,
+  attempts   int  not null check (attempts > 0),
+  last_error text,
   primary key (consumer, event_id)
 );
