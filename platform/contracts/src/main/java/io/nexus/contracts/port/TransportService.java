@@ -2,6 +2,7 @@ package io.nexus.contracts.port;
 
 import io.nexus.contracts.Domain.Priority;
 import io.nexus.contracts.Domain.TransportKind;
+import io.nexus.contracts.Place;
 
 /** Implemented by FlowPilot. */
 public interface TransportService {
@@ -12,12 +13,12 @@ public interface TransportService {
   void cancel(String transportId);
 
   /** Changes the destination of a transport that has not been delivered yet (machine failure rerouting). */
-  void redirect(String transportId, String newToNode);
+  void redirect(String transportId, Place newTo);
 
   /**
    * @param reservationId reservation consumed on pickup; null for WIP and PUTAWAY
    * @param materialId    null for WIP moves of a workpiece
    */
   record TransportRequest(String requestId, TransportKind kind, String orderId, String materialId, int quantity,
-                          String fromNode, String toNode, Priority priority, String reservationId) {}
+                          Place from, Place to, Priority priority, String reservationId) {}
 }
