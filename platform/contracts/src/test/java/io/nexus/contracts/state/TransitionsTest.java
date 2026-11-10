@@ -98,4 +98,11 @@ class TransitionsTest {
     assertThat(r.can(AgvStatus.FAULT, AgvStatus.IDLE)).isTrue();
     assertThat(r.can(AgvStatus.FAULT, AgvStatus.TO_DROP)).isFalse();
   }
+
+  /** The former engine dispatches vehicles that are charging or on their way to a charger. */
+  @Test
+  void chargingAgvCanBeDispatched() {
+    assertThat(AgvStatus.RULES.can(AgvStatus.CHARGING, AgvStatus.TO_PICKUP)).isTrue();
+    assertThat(AgvStatus.RULES.can(AgvStatus.TO_CHARGE, AgvStatus.TO_PICKUP)).isTrue();
+  }
 }

@@ -1,17 +1,19 @@
 package io.nexus.contracts.event;
 
-import java.util.UUID;
-
-/** Deterministic event ids: same run and seed give the same sequence, different runs never collide. */
+/** Event ids of one simulation run: "<runId>-<counter>". Deterministic within a run, unique across runs. */
 public final class EventIds {
-  private final long mostSig;
+  private final long runId;
   private long counter;
 
-  public EventIds(long runId, long seed) {
-    this.mostSig = (runId << 32) | (seed & 0xFFFFFFFFL);
+  public EventIds(long runId) {
+    this.runId = runId;
   }
 
-  public synchronized UUID next() {
-    return new UUID(mostSig, counter++);
+  public long runId() {
+    return runId;
+  }
+
+  public synchronized String next() {
+    return runId + "-" + counter++;
   }
 }
