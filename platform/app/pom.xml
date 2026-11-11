@@ -76,6 +76,8 @@
 		<dependency><groupId>io.zonky.test</groupId><artifactId>embedded-postgres</artifactId><version>2.2.2</version></dependency>
 		<dependency><groupId>org.springdoc</groupId><artifactId>springdoc-openapi-starter-webmvc-ui</artifactId><version>3.2.0</version></dependency>
 		<dependency><groupId>io.nexus</groupId><artifactId>nexus-contracts</artifactId><version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>
+		<dependency><groupId>io.nexus</groupId><artifactId>flowpilot</artifactId><version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>
+		<dependency><groupId>io.nexus</groupId><artifactId>smartfactory</artifactId><version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>
 	</dependencies>
 	<build>
 		<plugins>

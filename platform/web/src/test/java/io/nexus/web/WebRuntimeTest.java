@@ -22,6 +22,8 @@ class WebRuntimeTest {
         "1-1 scenario.finished b-flaky",       // was parked behind 1-0
         "random=" + Long.toHexString(r.nextLong()) + "," + Long.toHexString(r.nextLong()) + ","
             + Long.toHexString(r.nextLong()));
+    // each core module contributes one line; M1-B and M1-C replace the stubs
+    assertThat(lines).contains("flowpilot=bereit", "smartfactory=bereit");
     assertThat(WebRuntime.selfTest(4711)).as("same seed, same output").isEqualTo(out);
     assertThat(WebRuntime.selfTest(4712)).isNotEqualTo(out);
 

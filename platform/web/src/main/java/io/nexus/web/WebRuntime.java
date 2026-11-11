@@ -12,6 +12,8 @@ import io.nexus.contracts.memory.MemoryEventLog;
 import io.nexus.contracts.memory.MemoryUnitOfWork;
 import io.nexus.contracts.sim.SeededRandom;
 import io.nexus.contracts.sim.SimTime;
+import io.nexus.flowpilot.FlowPilotSelfTest;
+import io.nexus.smartfactory.SmartFactorySelfTest;
 import java.util.ArrayList;
 import java.util.List;
 import org.teavm.jso.JSExport;
@@ -71,7 +73,14 @@ public final class WebRuntime {
     double x = random.nextDouble();
     lines.add("arith=" + bits(x) + "," + bits(x * 17.5 + 3.25 / (x + 1)) + "," + bits(Math.sqrt(x)) + ","
         + bits(random.range(0.85, 1.2)));
+    // one line per core module; multi-line output is joined so the line count stays stable
+    lines.add("flowpilot=" + oneLine(FlowPilotSelfTest.run(seed)));
+    lines.add("smartfactory=" + oneLine(SmartFactorySelfTest.run(seed)));
     return String.join("\n", lines);
+  }
+
+  private static String oneLine(String text) {
+    return String.join(" | ", text.split("\n"));
   }
 
   private static String bits(double value) {
