@@ -10,6 +10,7 @@
   </dependencies>
   <build>
     <plugins>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId></plugin>
       <!-- EventLogContract is reused by platform/app to test the PostgreSQL implementation -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId>

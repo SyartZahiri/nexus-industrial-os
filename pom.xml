@@ -41,4 +41,36 @@
       </dependency>
     </dependencies>
   </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <!-- Core modules run unchanged in the browser (TeaVM): only the Java standard library and other
+             core modules are allowed at compile and runtime scope. Activated per module, see the core POMs. -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId>
+          <executions>
+            <execution>
+              <id>core-is-portable</id>
+              <goals><goal>enforce</goal></goals>
+              <configuration>
+                <rules>
+                  <bannedDependencies>
+                    <excludes>
+                      <exclude>*:*:*:*:compile</exclude>
+                      <exclude>*:*:*:*:runtime</exclude>
+                    </excludes>
+                    <includes>
+                      <include>io.nexus:*</include>
+                    </includes>
+                    <message>Kernmodule duerfen nur die Java-Standardbibliothek und andere Kernmodule verwenden (Spec 2a).</message>
+                  </bannedDependencies>
+                </rules>
+              </configuration>
+            </execution>
+          </executions>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
 </project>
