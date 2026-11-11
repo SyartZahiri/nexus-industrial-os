@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.2</version>
+    <relativePath/>
+  </parent>
+  <groupId>io.nexus</groupId>
+  <artifactId>nexus</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>NEXUS Industrial OS</name>
+
+  <properties>
+    <java.version>25</java.version>
+    <maven.compiler.release>25</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <modules>
+    <module>platform/contracts</module>
+    <module>platform/sim</module>
+    <module>FlowPilot</module>
+    <module>SmartFactory</module>
+    <module>platform/app</module>
+    <module>platform/web</module>
+  </modules>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency><groupId>io.nexus</groupId><artifactId>nexus-contracts</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>io.nexus</groupId><artifactId>nexus-sim</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>io.nexus</groupId><artifactId>flowpilot</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>io.nexus</groupId><artifactId>smartfactory</artifactId><version>${project.version}</version></dependency>
+      <dependency>
+        <groupId>io.zonky.test.postgres</groupId><artifactId>embedded-postgres-binaries-bom</artifactId>
+        <version>18.6.0</version><type>pom</type><scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <!-- Core modules run unchanged in the browser (TeaVM): only the Java standard library and other
+             core modules are allowed at compile and runtime scope. Activated per module, see the core POMs. -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId>
+          <executions>
+            <execution>
+              <id>core-is-portable</id>
+              <goals><goal>enforce</goal></goals>
+              <configuration>
+                <rules>
+                  <bannedDependencies>
+                    <excludes>
+                      <exclude>*:*:*:*:compile</exclude>
+                      <exclude>*:*:*:*:runtime</exclude>
+                      <exclude>*:*:*:*:provided</exclude>
+                    </excludes>
+                    <includes>
+                      <include>io.nexus:*</include>
+                    </includes>
+                    <message>Kernmodule duerfen nur die Java-Standardbibliothek und andere Kernmodule verwenden (Spec 2a).</message>
+                  </bannedDependencies>
+                </rules>
+              </configuration>
+            </execution>
+          </executions>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>
