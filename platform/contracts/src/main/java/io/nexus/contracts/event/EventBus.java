@@ -3,11 +3,15 @@ package io.nexus.contracts.event;
 import io.nexus.contracts.Domain.Severity;
 import io.nexus.contracts.DomainException;
 import io.nexus.contracts.sim.SimTime;
+import io.nexus.contracts.state.IllegalTransitionException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -20,8 +24,16 @@ import java.util.function.Supplier;
  *       that caused it has reached every consumer.</li>
  *   <li>Each consumer processes an event at most once with effect.</li>
  *   <li>A failed delivery is retried by {@link #retryFailed()} up to {@link #MAX_ATTEMPTS} times,
- *       then reported once as {@code system.consumer_failed}.</li>
+ *       then reported once as {@code system.consumer_failed}. While a consumer has an open failure,
+ *       later events are parked for it and delivered in order after the failure is resolved or given up,
+ *       so it never sees an effect before its cause.</li>
+ *   <li>Delivery never throws into the publisher: problems with the bookkeeping itself go to the
+ *       internal error handler.</li>
  * </ul>
+ *
+ * <p>Threading rule (server): {@link #retryFailed()} and anything that publishes inside
+ * {@link UnitOfWork#inNewTransaction} must not be called while the caller holds uncommitted writes,
+ * because delivery runs in further transactions that may need the same rows.
  */
 public final class EventBus implements EventPublisher {
   public static final int MAX_ATTEMPTS = 5;
@@ -31,16 +43,24 @@ public final class EventBus implements EventPublisher {
   private final UnitOfWork work;
   private final SimTime time;
   private final Supplier<EventIds> ids;
+  private final Consumer<Throwable> internalError;
   private final List<EventConsumer> consumers = new ArrayList<>();
   private final Deque<NexusEvent> queue = new ArrayDeque<>();
   private boolean draining;
 
   /** @param ids the ids of the current run; read once per publish so run id and counter always match */
   public EventBus(EventLog log, UnitOfWork work, SimTime time, Supplier<EventIds> ids) {
+    this(log, work, time, ids, t -> {});
+  }
+
+  /** @param internalError receives failures of the bus's own bookkeeping, e.g. the database being unreachable */
+  public EventBus(EventLog log, UnitOfWork work, SimTime time, Supplier<EventIds> ids,
+                  Consumer<Throwable> internalError) {
     this.log = log;
     this.work = work;
     this.time = time;
     this.ids = ids;
+    this.internalError = internalError;
   }
 
   /** Consumers are called in name order. A second consumer with the same name is a configuration error. */
@@ -73,15 +93,34 @@ public final class EventBus implements EventPublisher {
     work.afterCommit(() -> enqueue(event));
   }
 
-  /** Called at the end of every simulation step: retries deliveries that failed fewer than MAX_ATTEMPTS times. */
+  /**
+   * Called at the end of every simulation step, outside the step's transaction: retries failed and parked
+   * deliveries in publish order. A consumer that fails again keeps its later events parked.
+   */
   public synchronized void retryFailed() {
-    for (EventLog.Failure failure : log.openFailures(ids.get().runId(), MAX_ATTEMPTS)) {
-      for (EventConsumer consumer : List.copyOf(consumers)) {
-        if (consumer.name().equals(failure.consumer()) && deliver(consumer, failure.event())) {
-          work.inNewTransaction(() -> log.clearFailure(failure.consumer(), failure.event().eventId()));
-        }
+    List<EventLog.Failure> open;
+    try {
+      open = log.openFailures(ids.get().runId(), MAX_ATTEMPTS);
+    } catch (RuntimeException | Error e) {
+      internalError.accept(e);
+      return;
+    }
+    Set<String> stillFailing = new HashSet<>();
+    for (EventLog.Failure failure : open) {
+      if (stillFailing.contains(failure.consumer())) continue;
+      EventConsumer consumer = byName(failure.consumer());
+      if (consumer == null) continue;
+      if (attempt(consumer, failure.event())) {
+        guarded(() -> work.inNewTransaction(() -> log.clearFailure(failure.consumer(), failure.event().eventId())));
+      } else {
+        stillFailing.add(failure.consumer());
       }
     }
+  }
+
+  private EventConsumer byName(String name) {
+    for (EventConsumer c : consumers) if (c.name().equals(name)) return c;
+    return null;
   }
 
   private synchronized void enqueue(NexusEvent event) {
@@ -98,25 +137,58 @@ public final class EventBus implements EventPublisher {
     }
   }
 
-  /** Returns true if the consumer has processed the event, now or earlier. */
-  private boolean deliver(EventConsumer consumer, NexusEvent event) {
+  /** First delivery: parks the event if the consumer still has an open failure on an earlier one. */
+  private void deliver(EventConsumer consumer, NexusEvent event) {
+    boolean[] parked = {false};
+    guarded(() -> {
+      if (log.hasOpenFailure(consumer.name(), ids.get().runId(), MAX_ATTEMPTS)) {
+        work.inNewTransaction(() -> log.park(consumer.name(), event.eventId()));
+        parked[0] = true;
+      }
+    });
+    if (!parked[0]) attempt(consumer, event);
+  }
+
+  /** Returns true if the consumer has processed the event, now or earlier. Never throws. */
+  private boolean attempt(EventConsumer consumer, NexusEvent event) {
     try {
       // marker and the consumer's own writes commit together or not at all
       work.inNewTransaction(() -> {
         if (log.markProcessed(consumer.name(), event.eventId())) consumer.on(event);
       });
       return true;
-    } catch (RuntimeException e) {
-      String error = String.valueOf(e.getMessage());
-      int[] attempts = new int[1];
-      work.inNewTransaction(() -> attempts[0] = log.recordFailure(consumer.name(), event.eventId(), error));
-      // a consumer that cannot process the failure report itself is not reported again
-      if (attempts[0] == MAX_ATTEMPTS && !EventTypes.SYSTEM_CONSUMER_FAILED.equals(event.type())) {
-        work.inNewTransaction(() -> publish(EventTypes.SYSTEM_CONSUMER_FAILED, SOURCE, Severity.ERROR,
-            event.correlationId(),
-            new Payloads.ConsumerFailed(consumer.name(), event.eventId(), event.type(), error)));
-      }
+    } catch (RuntimeException | Error failure) {
+      guarded(() -> recordFailure(consumer, event, failure));
       return false;
+    }
+  }
+
+  private void recordFailure(EventConsumer consumer, NexusEvent event, Throwable failure) {
+    int[] attempts = new int[1];
+    // the full text stays in the failure record, which no API exposes
+    work.inNewTransaction(() -> attempts[0] = log.recordFailure(consumer.name(), event.eventId(), String.valueOf(failure)));
+    // a consumer that cannot process the failure report itself is not reported again
+    if (attempts[0] == MAX_ATTEMPTS && !EventTypes.SYSTEM_CONSUMER_FAILED.equals(event.type())) {
+      work.inNewTransaction(() -> publish(EventTypes.SYSTEM_CONSUMER_FAILED, SOURCE, Severity.ERROR,
+          event.correlationId(),
+          new Payloads.ConsumerFailed(consumer.name(), event.eventId(), event.type(), forClients(failure))));
+    }
+  }
+
+  /** The report is visible to every client: only business messages, otherwise just the exception class. */
+  private static String forClients(Throwable failure) {
+    if (failure instanceof DomainException || failure instanceof IllegalTransitionException) {
+      return failure.getMessage();
+    }
+    String name = failure.getClass().getName();
+    return name.substring(name.lastIndexOf('.') + 1);
+  }
+
+  private void guarded(Runnable bookkeeping) {
+    try {
+      bookkeeping.run();
+    } catch (RuntimeException | Error e) {
+      internalError.accept(e);
     }
   }
 }

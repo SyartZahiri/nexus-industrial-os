@@ -61,6 +61,20 @@ class JdbcEventLog implements EventLog {
   }
 
   @Override
+  public void park(String consumer, String eventId) {
+    jdbc.sql("insert into event_delivery_failure (consumer, event_id, attempts) values (:c, :e, 0) on conflict do nothing")
+        .param("c", consumer).param("e", eventId).update();
+  }
+
+  @Override
+  public boolean hasOpenFailure(String consumer, long runId, int maxAttempts) {
+    return jdbc.sql("""
+        select exists (select 1 from event_delivery_failure f join event e on e.event_id = f.event_id
+                       where f.consumer = :c and e.run_id = :run and f.attempts < :max)
+        """).param("c", consumer).param("run", runId).param("max", maxAttempts).query(Boolean.class).single();
+  }
+
+  @Override
   public List<Failure> openFailures(long runId, int maxAttempts) {
     return jdbc.sql("select f.consumer, f.attempts, " + EVENT_COLUMNS + """
          from event_delivery_failure f join event e on e.event_id = f.event_id

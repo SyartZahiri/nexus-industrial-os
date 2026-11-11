@@ -15,6 +15,16 @@ public class NexusApplication {
     SpringApplication.run(NexusApplication.class, args);
   }
 
+  /**
+   * The event bus holds a connection while delivering in further transactions, so the pool needs headroom;
+   * a lock wait that can never resolve (see EventBus threading rule) fails after 5 s instead of hanging.
+   * Same values for the postgres profile in application.yml.
+   */
+  static void applyPoolRules(HikariDataSource ds) {
+    ds.setMaximumPoolSize(20);
+    ds.setConnectionInitSql("set lock_timeout = '5s'");
+  }
+
   /** Real PostgreSQL without an installation; used for local dev and tests. Data is discarded on shutdown. */
   @Configuration
   @Profile("embedded")
@@ -30,6 +40,7 @@ public class NexusApplication {
       var ds = new HikariDataSource();
       ds.setJdbcUrl(pg.getJdbcUrl("postgres", "postgres"));
       ds.setUsername("postgres");
+      applyPoolRules(ds);
       return ds;
     }
   }

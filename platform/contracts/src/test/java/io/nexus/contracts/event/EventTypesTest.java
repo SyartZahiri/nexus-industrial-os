@@ -30,6 +30,17 @@ class EventTypesTest {
     assertThat(EventTypes.payloadType(EventTypes.ORDER_CREATED)).isEqualTo(Payloads.OrderCreated.class);
   }
 
+  /** Set.copyOf iterates in a different order on every JVM start; anything iterating these must be stable. */
+  @Test
+  void typesAndActiveStatesIterateInDeclarationOrder() {
+    assertThat(List.copyOf(EventTypes.all())).startsWith(EventTypes.ORDER_CREATED, EventTypes.ORDER_MATERIAL_PENDING)
+        .endsWith(EventTypes.DECISION, EventTypes.SYSTEM_CONSUMER_FAILED);
+    assertThat(List.copyOf(io.nexus.contracts.state.TransportStatus.ACTIVE)).containsExactly(
+        io.nexus.contracts.state.TransportStatus.ASSIGNED, io.nexus.contracts.state.TransportStatus.TO_PICKUP,
+        io.nexus.contracts.state.TransportStatus.LOADING, io.nexus.contracts.state.TransportStatus.IN_TRANSIT,
+        io.nexus.contracts.state.TransportStatus.UNLOADING);
+  }
+
   @Test
   void unknownTypeIsRejected() {
     assertThatThrownBy(() -> EventTypes.payloadType("gibt.es.nicht")).isInstanceOf(IllegalArgumentException.class);

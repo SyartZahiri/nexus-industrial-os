@@ -28,7 +28,7 @@ public final class MemoryUnitOfWork implements UnitOfWork {
     frames.push(frame);
     try {
       action.run();
-    } catch (RuntimeException e) {
+    } catch (RuntimeException | Error e) { // an Error must not leave the frame on the stack
       frames.pop();
       for (int i = frame.undo().size() - 1; i >= 0; i--) frame.undo().get(i).run();
       throw e;

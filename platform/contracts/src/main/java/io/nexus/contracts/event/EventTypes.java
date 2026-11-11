@@ -1,5 +1,6 @@
 package io.nexus.contracts.event;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -78,7 +79,7 @@ public final class EventTypes {
   }
 
   public static Set<String> all() {
-    return Set.copyOf(PAYLOADS.keySet());
+    return Collections.unmodifiableSet(PAYLOADS.keySet()); // declaration order, stable across JVM starts
   }
 
   public static Class<? extends Payload> payloadType(String type) {

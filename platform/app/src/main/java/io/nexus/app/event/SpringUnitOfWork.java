@@ -11,6 +11,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** UnitOfWork on Spring transactions. */
 @Component
 class SpringUnitOfWork implements UnitOfWork {
+  private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SpringUnitOfWork.class);
   private final TransactionTemplate requiresNew;
 
   SpringUnitOfWork(PlatformTransactionManager txManager) {
@@ -25,7 +26,12 @@ class SpringUnitOfWork implements UnitOfWork {
       TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
         @Override
         public void afterCommit() {
-          action.run();
+          // the publisher's work is committed; a delivery problem must not turn its request into an error
+          try {
+            action.run();
+          } catch (RuntimeException | Error e) {
+            log.error("Zustellung nach Commit fehlgeschlagen", e);
+          }
         }
       });
     } else {

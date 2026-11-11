@@ -64,8 +64,8 @@ class SchemaTest {
   @Test
   void databaseRejectsUnknownTransportStatus() {
     assertThatThrownBy(() -> jdbc.sql("""
-        insert into transport_order (id, request_id, kind, qty, from_node, to_node, priority, status, created_at_ms)
-        values ('TO-X', 'TO-X', 'SUPPLY', 1, 'D_RAW', 'D_CNC01', 'NORMAL', 'KAPUTT', 0)
+        insert into transport_order (id, request_id, kind, qty, from_kind, from_id, from_node, to_kind, to_id, to_node, priority, status, created_at_ms)
+        values ('TO-X', 'TO-X', 'SUPPLY', 1, 'STORAGE', 'RAW-A', 'D_RAW', 'MACHINE_IN', 'CNC-01', 'D_CNC01', 'NORMAL', 'KAPUTT', 0)
         """).update()).isInstanceOf(DataIntegrityViolationException.class);
   }
 
@@ -73,6 +73,9 @@ class SchemaTest {
   @Test
   void statusChecksAcceptEveryEnumValue() {
     assertChecksCover("transport_order", io.nexus.contracts.state.TransportStatus.values());
+    assertChecksCover("transport_order", io.nexus.contracts.Place.Kind.values());
+    assertChecksCover("machine_state_interval", io.nexus.contracts.state.MachineStatus.values());
+    assertChecksCover("operation", io.nexus.contracts.Domain.ProcessType.values());
     assertChecksCover("machine", io.nexus.contracts.state.MachineStatus.values());
     assertChecksCover("agv", io.nexus.contracts.state.AgvStatus.values());
     assertChecksCover("production_order", io.nexus.contracts.state.OrderStatus.values());
@@ -84,6 +87,15 @@ class SchemaTest {
         where conrelid = cast(:t as regclass) and contype = 'c'
         """).param("t", table).query(String.class).list());
     for (Enum<?> v : values) assertThat(checks).as(table + " accepts " + v).contains("'" + v.name() + "'");
+  }
+
+  /** A transport must name its business places; nodes alone cannot be mapped back (CNC docks serve in and out). */
+  @Test
+  void transportOrderRejectsAnUnknownPlaceKind() {
+    assertThatThrownBy(() -> jdbc.sql("""
+        insert into transport_order (id, request_id, kind, qty, from_kind, from_id, from_node, to_kind, to_id, to_node, priority, created_at_ms)
+        values ('TO-P', 'TO-P', 'SUPPLY', 1, 'REGAL', 'RAW-A', 'D_RAW', 'MACHINE_IN', 'CNC-01', 'D_CNC01', 'NORMAL', 0)
+        """).update()).isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
@@ -160,8 +172,8 @@ class SchemaTest {
   @Test
   void databaseRejectsSecondActiveTransportForTheSameAgv() {
     String insert = """
-        insert into transport_order (id, request_id, kind, qty, from_node, to_node, priority, status, agv_id, created_at_ms)
-        values (:id, :id, 'SUPPLY', 1, 'D_RAW', 'D_CNC01', 'NORMAL', :status, 'AGV-01', 0)
+        insert into transport_order (id, request_id, kind, qty, from_kind, from_id, from_node, to_kind, to_id, to_node, priority, status, agv_id, created_at_ms)
+        values (:id, :id, 'SUPPLY', 1, 'STORAGE', 'RAW-A', 'D_RAW', 'MACHINE_IN', 'CNC-01', 'D_CNC01', 'NORMAL', :status, 'AGV-01', 0)
         """;
     jdbc.sql(insert).param("id", "TO-1").param("status", "IN_TRANSIT").update();
     jdbc.sql(insert).param("id", "TO-2").param("status", "DELIVERED").update(); // finished ones do not count

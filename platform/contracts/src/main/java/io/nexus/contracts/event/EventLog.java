@@ -15,7 +15,16 @@ public interface EventLog {
 
   void clearFailure(String consumer, String eventId);
 
-  /** Failed deliveries of the run with fewer than maxAttempts attempts, in publish order. */
+  /**
+   * Holds an event back for a consumer that still has an open failure on an earlier event, so it never sees
+   * an effect before its cause. Stored as a failure with zero attempts; retried in publish order. Idempotent.
+   */
+  void park(String consumer, String eventId);
+
+  /** True if the consumer has a failed or parked event of the run with fewer than maxAttempts attempts. */
+  boolean hasOpenFailure(String consumer, long runId, int maxAttempts);
+
+  /** Failed and parked deliveries of the run with fewer than maxAttempts attempts, in publish order. */
   List<Failure> openFailures(long runId, int maxAttempts);
 
   Optional<NexusEvent> find(String eventId);

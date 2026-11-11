@@ -93,6 +93,19 @@ public abstract class EventLogContract {
   }
 
   @Test
+  void parkedEventIsOpenWithZeroAttemptsAndBlocksTheConsumer() {
+    NexusEvent e = stored(runId());
+    assertThat(log().hasOpenFailure("a", runId(), 5)).isFalse();
+    log().park("a", e.eventId());
+    log().park("a", e.eventId()); // idempotent
+    assertThat(log().openFailures(runId(), 5)).extracting(EventLog.Failure::attempts).containsExactly(0);
+    assertThat(log().hasOpenFailure("a", runId(), 5)).isTrue();
+    assertThat(log().hasOpenFailure("b", runId(), 5)).isFalse();
+    assertThat(log().hasOpenFailure("a", otherRunId(), 5)).isFalse();
+    assertThat(log().recordFailure("a", e.eventId(), "x")).as("a retry of a parked event is attempt 1").isEqualTo(1);
+  }
+
+  @Test
   void openFailuresAreScopedToTheRunAndOrderedByPublishOrder() {
     NexusEvent first = stored(runId());
     NexusEvent second = stored(runId());

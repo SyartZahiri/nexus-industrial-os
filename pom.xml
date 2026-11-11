@@ -59,6 +59,7 @@
                     <excludes>
                       <exclude>*:*:*:*:compile</exclude>
                       <exclude>*:*:*:*:runtime</exclude>
+                      <exclude>*:*:*:*:provided</exclude>
                     </excludes>
                     <includes>
                       <include>io.nexus:*</include>

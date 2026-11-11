@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Configuration;
 /** Wires the EventBus of the core to PostgreSQL and Spring transactions. */
 @Configuration
 class EventConfig {
+  private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(EventConfig.class);
   @Bean
   SimTime simTime() {
     return new SimTime();
@@ -20,7 +21,7 @@ class EventConfig {
   /** Also serves as the EventPublisher bean. Every EventConsumer bean is registered; duplicate names fail startup. */
   @Bean
   EventBus eventBus(EventLog log, UnitOfWork work, SimTime time, SimRun run, ObjectProvider<EventConsumer> consumers) {
-    var bus = new EventBus(log, work, time, run::ids);
+    var bus = new EventBus(log, work, time, run::ids, e -> LOG.error("Ereignisverteilung: interner Fehler", e));
     consumers.orderedStream().forEach(bus::register);
     return bus;
   }

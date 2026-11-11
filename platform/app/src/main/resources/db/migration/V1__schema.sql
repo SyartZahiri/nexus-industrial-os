@@ -112,7 +112,7 @@ create table operation (
   id               text primary key,
   order_id         text not null references production_order,
   seq              int  not null,
-  process          text not null,
+  process          text not null check (process in ('DREHEN', 'FRAESEN', 'MONTAGE', 'PRUEFEN')),
   machine_id       text references machine,
   status           text not null default 'PLANNED' check (status in
                      ('PLANNED', 'WAITING_MATERIAL', 'READY', 'RUNNING', 'DONE', 'CANCELLED')),
@@ -126,7 +126,8 @@ create table operation (
 create table machine_state_interval (
   id         bigserial primary key,
   machine_id text   not null references machine,
-  status     text   not null,
+  status     text   not null check (status in
+               ('IDLE', 'SETUP', 'RUNNING', 'BLOCKED', 'STOPPED', 'FAULT', 'REPAIR', 'MAINTENANCE')),
   from_ms    bigint not null,
   to_ms      bigint
 );
@@ -176,7 +177,8 @@ create constraint trigger stock_capacity after insert or update of on_hand on st
 
 create table reservation (
   id            text primary key,
-  -- one request may reserve several materials; idempotency is checked per request in the application
+  -- one request reserves several materials, one line per material (the caller aggregates);
+  -- idempotency is checked per request in the application
   request_id    text   not null,
   order_id      text   not null,
   material_id   text   not null,
@@ -207,7 +209,12 @@ create table transport_order (
   order_id       text,
   material_id    text,
   qty            int    not null check (qty > 0),
+  -- business places as in the contract (Place); a node alone is ambiguous, CNC docks serve in and out
+  from_kind      text   not null check (from_kind in ('STORAGE', 'MACHINE_IN', 'MACHINE_OUT', 'CONVEYOR', 'CHARGER')),
+  from_id        text   not null,
   from_node      text   not null references graph_node,
+  to_kind        text   not null check (to_kind in ('STORAGE', 'MACHINE_IN', 'MACHINE_OUT', 'CONVEYOR', 'CHARGER')),
+  to_id          text   not null,
   to_node        text   not null references graph_node,
   priority       text   not null check (priority in ('NORMAL', 'HOCH', 'EILIG')),
   status         text   not null default 'CREATED' check (status in
@@ -245,7 +252,8 @@ create table processed_event (
 create table event_delivery_failure (
   consumer   text not null,
   event_id   text not null references event,
-  attempts   int  not null check (attempts > 0),
+  -- 0 = parked behind an earlier failure of the same consumer, see EventBus
+  attempts   int  not null check (attempts >= 0),
   last_error text,
   primary key (consumer, event_id)
 );

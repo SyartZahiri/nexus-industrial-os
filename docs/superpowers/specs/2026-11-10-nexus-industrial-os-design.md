@@ -55,6 +55,8 @@ Regeln:
 - Der Kern wird in CI zusätzlich mit TeaVM übersetzt. Verwendet jemand eine nicht unterstützte Bibliotheksfunktion, schlägt der Build fehl.
 - Zufall kommt aus einem eigenen Generator im Kern (SplitMix64), nicht aus `java.util.Random`, damit Server und Browser dieselbe Zahlenfolge erzeugen.
 - IDs sind Zeichenketten (`<lauf>-<zähler>`), keine `UUID`.
+- Jedes Kernmodul hängt in `platform/web` und liefert als erste Aufgabe einen `@JSExport`-Selbsttest, den der Build auf der JVM und in Node vergleicht. TeaVM übersetzt nur erreichbaren Code; ohne Selbsttest bliebe ein Modul ungeprüft.
+- Determinismus im Kern: keine Iteration über `HashMap`/`HashSet` mit Enum- oder Record-Schlüsseln (der Hash ist auf der JVM identitätsbasiert), keine `Set.of`/`Set.copyOf`/`Map.of` dort, wo iteriert wird; in Ereignissen nur Grundrechenarten und `sqrt`, keine Ergebnisse von `sin`, `cos`, `atan2`, `pow`, die zwischen den Laufzeiten im letzten Bit abweichen dürfen.
 - Die Oberfläche ist in beiden Betriebsarten dieselbe. Sie spricht mit einer Schnittstelle `NexusClient`, die entweder REST und WebSocket nutzt oder das TeaVM-Modul in einem Web Worker.
 
 ## 3. Ausgangslage FactoryTwin
@@ -147,7 +149,9 @@ Verarbeitung: Ereignisse werden in derselben Transaktion wie die Zustandsänderu
 Regeln der Verteilung (aus dem Review von M1-A):
 
 - **Reihenfolge.** Zugestellt wird in der Reihenfolge der Veröffentlichung über eine Warteschlange. Veröffentlicht ein Verbraucher selbst ein Ereignis, wird es hinten angestellt und erst zugestellt, wenn das auslösende Ereignis alle Verbraucher erreicht hat. Kein Verbraucher sieht eine Wirkung vor ihrer Ursache.
-- **Fehlgeschlagene Verbraucher.** Schlägt ein Verbraucher fehl, wird sein Schreibvorgang zurückgerollt und das Ereignis bleibt für ihn offen. Am Ende jedes Simulationsschritts werden offene Zustellungen erneut versucht, höchstens fünfmal. Danach meldet das System `system.consumer_failed` mit Schweregrad `ERROR`, sichtbar im Event Monitor.
+- **Fehlgeschlagene Verbraucher.** Schlägt ein Verbraucher fehl, wird sein Schreibvorgang zurückgerollt und das Ereignis bleibt für ihn offen. Solange er einen offenen Fehlschlag hat, werden spätere Ereignisse für ihn zurückgehalten und danach in Veröffentlichungsreihenfolge zugestellt; auch er sieht also keine Wirkung vor ihrer Ursache. Am Ende jedes Simulationsschritts werden offene Zustellungen erneut versucht, höchstens fünfmal. Danach meldet das System `system.consumer_failed` mit Schweregrad `ERROR`, sichtbar im Event Monitor. Die Meldung enthält nur Texte von Fachausnahmen, sonst den Namen der Ausnahmeklasse; der volle Text bleibt in der Fehlertabelle, die keine Schnittstelle ausliefert.
+- **Zustellung wirft nie in den Veröffentlicher.** Probleme der Verteilung selbst (Datenbank nicht erreichbar) werden protokolliert; eine bereits festgeschriebene Änderung führt nicht zu einem Fehler beim Aufrufer.
+- **Threading auf dem Server.** Erneute Zustellung und Veröffentlichungen in einer eigenen Transaktion dürfen nicht aufgerufen werden, während der Aufrufer noch nicht festgeschriebene Änderungen hält. Sperrwartezeiten sind auf 5 s begrenzt, der Verbindungspool hat 20 Verbindungen. Der Simulationsschritt in M1-D ruft die Wiederholung ausserhalb seiner Transaktion auf.
 - **Gleiche Nutzlast.** Verbraucher erhalten bei der ersten und bei jeder erneuten Zustellung dieselbe typisierte Nutzlast.
 - **Eindeutige Namen.** Zwei Verbraucher mit demselben Namen sind ein Startfehler.
 - **Ereignis-IDs** sind Zeichenketten `<lauf>-<zähler>`. Die Determinismusprüfung vergleicht Zähler, Zeit, Typ und Nutzlast, nicht die Laufnummer.
@@ -234,7 +238,7 @@ PostgreSQL, Schema über Flyway. Tabellen:
 
 `product`, `routing_step`, `bom_item`, `machine`, `maintenance_window`, `production_order`, `operation`, `machine_state_interval`, `material`, `storage_location`, `stock`, `reservation`, `transport_order`, `agv`, `graph_node`, `graph_edge`, `event`, `processed_event`, `sim_run`.
 
-Wichtige Constraints: `stock.reserved <= stock.on_hand`, `stock.on_hand <= storage_location.capacity`, Unique `reservation.request_id`, Unique `transport_order.request_id`, partieller Unique-Index auf `transport_order(agv_id)` für aktive Zustände, Optimistic Locking (`version`) auf `production_order` und `transport_order`.
+Wichtige Constraints: `stock.reserved <= stock.on_hand`, `stock.on_hand <= storage_location.capacity`, Unique `reservation(request_id, material_id)` (eine Zeile je Material, der Aufrufer fasst zusammen), Unique `transport_order.request_id`, Quelle und Ziel eines Transports als fachlicher Ort (`from_kind`/`from_id`, `to_kind`/`to_id`) neben dem aufgelösten Graphknoten, partieller Unique-Index auf `transport_order(agv_id)` für aktive Zustände, Optimistic Locking (`version`) auf `production_order` und `transport_order`.
 
 ## 14. Frontend (FactoryTwin wird NEXUS)
 

@@ -11,7 +11,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /** EventLog held in memory. Behaves like the PostgreSQL one; EventLogContract checks both. */
-public final class MemoryEventLog implements EventLog {
+public class MemoryEventLog implements EventLog {
   private record Stored(long runId, NexusEvent event) {}
 
   private final MemoryUnitOfWork work;
@@ -67,6 +67,25 @@ public final class MemoryEventLog implements EventLog {
     String key = key(consumer, eventId);
     Integer before = failures.remove(key);
     if (before != null) work.onRollback(() -> failures.put(key, before));
+  }
+
+  @Override
+  public void park(String consumer, String eventId) {
+    String key = key(consumer, eventId);
+    if (failures.containsKey(key)) return;
+    failures.put(key, 0);
+    work.onRollback(() -> failures.remove(key));
+  }
+
+  @Override
+  public boolean hasOpenFailure(String consumer, long runId, int maxAttempts) {
+    String prefix = key(consumer, "");
+    for (Map.Entry<String, Integer> f : failures.entrySet()) {
+      if (!f.getKey().startsWith(prefix) || f.getValue() >= maxAttempts) continue;
+      Stored stored = byId.get(f.getKey().substring(prefix.length()));
+      if (stored != null && stored.runId() == runId) return true;
+    }
+    return false;
   }
 
   @Override

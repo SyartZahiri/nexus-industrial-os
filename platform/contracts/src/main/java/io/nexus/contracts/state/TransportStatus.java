@@ -1,5 +1,6 @@
 package io.nexus.contracts.state;
 
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 
@@ -8,7 +9,7 @@ public enum TransportStatus {
 
   /** States in which the order occupies an AGV. Mirrors the partial unique index in the database. */
   public static final Set<TransportStatus> ACTIVE =
-      Set.copyOf(EnumSet.of(ASSIGNED, TO_PICKUP, LOADING, IN_TRANSIT, UNLOADING));
+      Collections.unmodifiableSet(EnumSet.of(ASSIGNED, TO_PICKUP, LOADING, IN_TRANSIT, UNLOADING)); // ordinal order
 
   public boolean terminal() {
     return this == DELIVERED || this == CANCELLED;

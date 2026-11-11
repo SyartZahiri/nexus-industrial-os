@@ -18,8 +18,8 @@ class WebRuntimeTest {
     assertThat(lines).startsWith(
         "1-0 order.created a-follow",          // b-flaky fails its first attempt here
         "1-1 scenario.finished a-follow",      // published by a-follow, delivered after 1-0 reached everyone
-        "1-1 scenario.finished b-flaky",
-        "1-0 order.created b-flaky",           // retried
+        "1-0 order.created b-flaky",           // retried; b-flaky never sees the effect before the cause
+        "1-1 scenario.finished b-flaky",       // was parked behind 1-0
         "random=" + Long.toHexString(r.nextLong()) + "," + Long.toHexString(r.nextLong()) + ","
             + Long.toHexString(r.nextLong()));
     assertThat(WebRuntime.selfTest(4711)).as("same seed, same output").isEqualTo(out);

@@ -30,6 +30,8 @@ class ServerEventBusTest {
   static final List<NexusEvent> seenByA = new ArrayList<>();
   static final List<NexusEvent> seenByB = new ArrayList<>();
   static boolean aFails;
+  static boolean cascade;
+  static final List<String> order = new ArrayList<>();
 
   @TestConfiguration
   static class Consumers {
@@ -42,15 +44,23 @@ class ServerEventBusTest {
           jdbc.sql("insert into maintenance_window (machine_id, start_ms, end_ms) values ('CNC-01', 0, 1)").update();
           if (aFails) throw new IllegalStateException("boom");
           seenByA.add(e);
+          if (cascade) order.add(e.type() + "@a");
         }
       };
     }
 
     @Bean
-    EventConsumer consumerB() {
+    EventConsumer consumerB(org.springframework.beans.factory.ObjectProvider<EventPublisher> publisher) {
       return new EventConsumer() {
         public String name() { return "test-b"; }
-        public void on(NexusEvent e) { seenByB.add(e); }
+        public void on(NexusEvent e) {
+          seenByB.add(e);
+          if (cascade) order.add(e.type() + "@b");
+          // B publishes inside its own transaction: the follow-up must reach A only after the cause reached B
+          if (cascade && e.type().equals(EventTypes.ORDER_CREATED)) {
+            publisher.getObject().publish(EventTypes.SCENARIO_FINISHED, "test", Severity.INFO, "PO-1", new Payloads.Note("Folge"));
+          }
+        }
       };
     }
   }
@@ -65,6 +75,8 @@ class ServerEventBusTest {
     seenByA.clear();
     seenByB.clear();
     aFails = false;
+    cascade = false;
+    order.clear();
     jdbc.sql("delete from event_delivery_failure").update();
     jdbc.sql("delete from processed_event").update();
     jdbc.sql("delete from event").update();
@@ -90,6 +102,13 @@ class ServerEventBusTest {
     assertThat(seenByB).hasSize(1);
     assertThat(jdbc.sql("select payload->>'priority' from event where correlation_id = 'PO-1'")
         .query(String.class).single()).isEqualTo("EILIG");
+  }
+
+  @Test
+  void followUpPublishedByAConsumerArrivesAfterTheCauseReachedEveryone() {
+    cascade = true;
+    tx.executeWithoutResult(s -> orderCreated());
+    assertThat(order).containsExactly("order.created@a", "order.created@b", "scenario.finished@a", "scenario.finished@b");
   }
 
   @Test
