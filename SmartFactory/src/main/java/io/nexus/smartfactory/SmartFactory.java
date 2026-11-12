@@ -9,16 +9,19 @@ import io.nexus.contracts.event.UnitOfWork;
 import io.nexus.contracts.memory.MemoryUnitOfWork;
 import io.nexus.contracts.port.IdSource;
 import io.nexus.contracts.port.MachineControl;
+import io.nexus.contracts.port.MachineFeedback;
 import io.nexus.contracts.port.MaterialService;
 import io.nexus.contracts.port.ProductCatalog;
 import io.nexus.contracts.port.TransportService;
 import io.nexus.contracts.sim.SimTime;
+import io.nexus.contracts.state.MachineStatus;
 import io.nexus.smartfactory.catalog.Catalog;
 import io.nexus.smartfactory.orders.NewOrder;
 import io.nexus.smartfactory.orders.OrderChange;
 import io.nexus.smartfactory.orders.OrderService;
 import io.nexus.smartfactory.planning.DispatchRule;
 import io.nexus.smartfactory.planning.Plan;
+import io.nexus.smartfactory.production.ProductionFlow;
 import io.nexus.smartfactory.store.MachineStore;
 import io.nexus.smartfactory.store.Operation;
 import io.nexus.smartfactory.store.OrderStore;
@@ -32,7 +35,7 @@ import java.util.function.Supplier;
  * Facade of SmartFactory. Every public method runs in its own unit of work and is synchronized.
  * Ports of other modules are suppliers, resolved on first use, so the module starts without them.
  */
-public final class SmartFactory {
+public final class SmartFactory implements MachineFeedback {
   /** Name of the event consumer SmartFactory registers at the bus. */
   public static final String CONSUMER = "smartfactory";
 
@@ -41,6 +44,7 @@ public final class SmartFactory {
   private final UnitOfWork work;
   private final Catalog catalog = new Catalog();
   private final OrderService orderService;
+  private final ProductionFlow flow;
 
   public SmartFactory(OrderStore orders, MachineStore machineStore, EventBus bus, UnitOfWork work, SimTime time,
                       IdSource ids, Supplier<MaterialService> materials, Supplier<TransportService> transports,
@@ -49,6 +53,7 @@ public final class SmartFactory {
     this.machineStore = machineStore;
     this.work = work;
     this.orderService = new OrderService(orders, machineStore, bus, time, ids, catalog, materials, transports);
+    this.flow = new ProductionFlow(orders, machineStore, orderService, catalog, time, materials, transports, machines);
     bus.register(new EventConsumer() {
       @Override public String name() { return CONSUMER; }
       @Override public void on(NexusEvent event) { consume(event); }
@@ -66,19 +71,19 @@ public final class SmartFactory {
   }
 
   public String createOrder(NewOrder order) {
-    return inUnit(() -> orderService.create(order));
+    return inUnit(() -> { String id = orderService.create(order); flow.advance(); return id; });
   }
 
   public void changeOrder(String orderId, OrderChange change) {
-    inUnit(() -> { orderService.change(orderId, change); return null; });
+    inUnit(() -> { orderService.change(orderId, change); flow.advance(); return null; });
   }
 
   public void cancelOrder(String orderId) {
-    inUnit(() -> { orderService.cancel(orderId); return null; });
+    inUnit(() -> { orderService.cancel(orderId); flow.advance(); return null; });
   }
 
   public void setDispatchRule(DispatchRule rule) {
-    inUnit(() -> { orderService.setRule(rule); return null; });
+    inUnit(() -> { orderService.setRule(rule); flow.advance(); return null; });
   }
 
   public DispatchRule dispatchRule() {
@@ -98,12 +103,42 @@ public final class SmartFactory {
     return orders.operations(orderId);
   }
 
+  // ---- MachineFeedback: called by the simulation --------------------------------------------------------
+
+  @Override
+  public void statusChanged(String machineId, MachineStatus from, MachineStatus to) {
+    inUnit(() -> {
+      if (flow.statusChanged(machineId, from, to)) flow.advance();
+      return null;
+    });
+  }
+
+  @Override
+  public void faultRaised(String machineId, String faultTypeId, String label, boolean scrappedWorkpiece) {
+    // Task 6
+  }
+
+  @Override
+  public void jobFinished(String machineId, String orderId, int stepSeq, int good, int scrap) {
+    inUnit(() -> { flow.jobFinished(machineId, orderId, stepSeq, good, scrap); flow.advance(); return null; });
+  }
+
+  @Override
+  public void conveyorDelivered(String machineId, String orderId, int stepSeq, int quantity) {
+    inUnit(() -> { flow.conveyorDelivered(machineId, orderId, stepSeq, quantity); flow.advance(); return null; });
+  }
+
   /** Runs in the delivering bus's unit of work, so the processed marker and these writes commit together. */
   private synchronized void consume(NexusEvent event) {
     try {
       if (event.type().equals(EventTypes.STOCK_CHANGED)) {
         orderService.stockChanged(((Payloads.StockChanged) event.payload()).materialId());
+      } else if (event.type().equals(EventTypes.TRANSPORT_DELIVERED)) {
+        flow.delivered((Payloads.TransportDelivered) event.payload());
+      } else {
+        return;
       }
+      flow.advance();
     } catch (RuntimeException | Error e) {
       orderService.forgetPlan();
       throw e;
