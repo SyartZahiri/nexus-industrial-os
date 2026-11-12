@@ -101,6 +101,11 @@ class FleetFixture {
     return fp.vehicles().stream().filter(v -> v.id().equals(id)).findFirst().orElseThrow();
   }
 
+  /** The node the FleetStore holds for the AGV: where it stood at its last state change. */
+  String fleetNode(String agvId) {
+    return fleet.agvs().stream().filter(a -> a.id().equals(agvId)).findFirst().orElseThrow().nodeId();
+  }
+
   List<NexusEvent> events() {
     return log.all();
   }

@@ -41,6 +41,10 @@ final class Vehicle {
   boolean routeBlockedReported;
   String faultTypeId;
   long faultUntilMs;
+  /** Transport whose load is still on board after this vehicle failed; a replacement picks it up here. */
+  String heldLoad;
+  /** For a replacement: the failed vehicle it picks the load up from. Close behind it counts as arrived. */
+  String rescueFrom;
   /** What the FleetStore holds; compared to decide whether to write. */
   AgvRecord saved;
 

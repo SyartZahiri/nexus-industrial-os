@@ -34,8 +34,29 @@ class FleetInvariantTest {
   static final String[] CNC = {"CNC-01", "CNC-02", "CNC-03", "CNC-04"};
   static final String[] FINISHED = {"FG-GH200", "FG-AW50", "FG-FP12", "FG-MT7"};
 
-  /** Hook for Task 7: random faults and edge blocks. */
-  protected void disturb(FleetFixture f, SeededRandom random) {}
+  private String blockedEdge;
+  private long unblockAtMs;
+
+  /** Random AGV faults (about one every 5 min) and one lane edge blocked for 45 s about every 10 min. */
+  private void disturb(FleetFixture f, SeededRandom random) {
+    if (random.nextInt(3000) == 0) {
+      var v = f.fp.vehicles().get(random.nextInt(6));
+      if (v.status() != io.nexus.contracts.state.AgvStatus.FAULT
+          && v.status() != io.nexus.contracts.state.AgvStatus.OFFLINE) {
+        f.fp.injectFault(v.id(), random.nextInt(2) == 0 ? "NAV" : "COMM");
+      }
+    }
+    if (blockedEdge != null && f.time.nowMs() >= unblockAtMs) {
+      f.fp.setEdgeBlocked(blockedEdge, false);
+      blockedEdge = null;
+    }
+    if (blockedEdge == null && random.nextInt(6000) == 0) {
+      var edges = FlowPilotMasterData.edges();
+      blockedEdge = edges.get(random.nextInt(edges.size())).id();
+      unblockAtMs = f.time.nowMs() + 45_000;
+      f.fp.setEdgeBlocked(blockedEdge, true);
+    }
+  }
 
   @Test
   void longRunKeepsDistanceAndConservesMaterial() {
@@ -145,12 +166,11 @@ class FleetInvariantTest {
         balance.merge(t.materialId(), t.quantity(), Integer::sum);
       }
       if (t.kind() == TransportKind.SUPPLY) {
-        boolean pickedUp = t.status() == TransportStatus.LOADING || t.status() == TransportStatus.IN_TRANSIT
-            || t.status() == TransportStatus.UNLOADING || t.status() == TransportStatus.FAILED
-            || t.status() == TransportStatus.DELIVERED || (t.status() == TransportStatus.ASSIGNED
-                && f.stock.reservation(t.reservationId()).orElseThrow().status() == Reservation.Status.CONSUMED)
-            || (t.status() == TransportStatus.TO_PICKUP
-                && f.stock.reservation(t.reservationId()).orElseThrow().status() == Reservation.Status.CONSUMED);
+        // before pickup only a load still on a failed AGV (waiting for its replacement) counts as picked up
+        boolean beforePickup = t.status() == TransportStatus.CREATED || t.status() == TransportStatus.ASSIGNED
+            || t.status() == TransportStatus.TO_PICKUP || t.status() == TransportStatus.CANCELLED;
+        boolean pickedUp = !beforePickup
+            || f.stock.reservation(t.reservationId()).orElseThrow().status() == Reservation.Status.CONSUMED;
         if (pickedUp) consumed.merge(t.materialId(), t.quantity(), Integer::sum);
       }
     }

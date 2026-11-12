@@ -25,7 +25,7 @@ final class Dispatcher {
   }
 
   static boolean free(Vehicle v) {
-    return v.enabled && v.transportId == null && !v.chargeRequested
+    return v.enabled && v.transportId == null && v.heldLoad == null && !v.chargeRequested
         && v.chargeTarget <= AgvPhysics.RESUME_FROM_CHARGE
         && (v.status == io.nexus.contracts.state.AgvStatus.IDLE
             || v.status == io.nexus.contracts.state.AgvStatus.CHARGING
@@ -46,8 +46,13 @@ final class Dispatcher {
     return Math.abs(n.x() - v.x) < 1e-9 && Math.abs(n.z() - v.z) < 1e-9;
   }
 
-  Choice choose(TransportOrder t, List<Vehicle> free, Set<String> avoid) {
-    Route trip = graph.route(t.fromNode(), t.toNode(), avoid);
+  /**
+   * @param avoid     nodes the approach must not pass
+   * @param tripAvoid nodes the trip must not pass; without the failed vehicle that holds the load, which will
+   *                  be gone or repaired by the time the trip starts
+   */
+  Choice choose(TransportOrder t, List<Vehicle> free, Set<String> avoid, Set<String> tripAvoid) {
+    Route trip = graph.route(t.fromNode(), t.toNode(), tripAvoid);
     if (!trip.found()) return new Choice(null, null, 0, List.of(), true);
     Vehicle best = null;
     Route bestRoute = null;

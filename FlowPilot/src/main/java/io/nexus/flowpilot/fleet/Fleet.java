@@ -84,9 +84,24 @@ public final class Fleet {
     throw DomainException.notFound("AGV", id);
   }
 
-  /** Nodes no route may pass. Task 7 adds the nodes of failed vehicles. */
+  /** Nodes no route may pass: where failed vehicles stand (and the node ahead if one stopped on an edge). */
   Set<String> avoidNodes() {
-    return Set.of();
+    return avoidNodesExcept(null);
+  }
+
+  private Set<String> avoidNodesExcept(Vehicle except) {
+    TreeSet<String> nodes = new TreeSet<>();
+    for (Vehicle v : vehicles) {
+      if (v.status != AgvStatus.FAULT || v == except) continue;
+      nodes.add(v.nodeId);
+      if (!v.route.isEmpty() && !dispatcher.atNode(v)) nodes.add(v.route.get(0));
+    }
+    return nodes;
+  }
+
+  private Vehicle holderOf(String transportId) {
+    for (Vehicle v : vehicles) if (transportId.equals(v.heldLoad)) return v;
+    return null;
   }
 
   private static String chargerAt(String nodeId) {
@@ -115,7 +130,8 @@ public final class Fleet {
     for (TransportOrder t : transports.open()) {
       if (t.status() != TransportStatus.CREATED && t.status() != TransportStatus.FAILED) continue;
       if (free.isEmpty()) break;
-      Dispatcher.Choice c = dispatcher.choose(t, free, avoid);
+      Vehicle holder = holderOf(t.id());
+      Dispatcher.Choice c = dispatcher.choose(t, free, avoid, holder == null ? avoid : avoidNodesExcept(holder));
       if (c.vehicle() == null) {
         if (c.blocked()) reportBlocked(t);
         continue;
@@ -141,11 +157,13 @@ public final class Fleet {
       TransportOrder a = moveTransport(t, TransportStatus.ASSIGNED, v.id,
           again ? EventTypes.TRANSPORT_REASSIGNED : EventTypes.TRANSPORT_ASSIGNED);
       moveTransport(a, TransportStatus.TO_PICKUP, v.id, EventTypes.TRANSPORT_STATE);
-      saved[0] = saveAgv(v, AgvStatus.TO_PICKUP, t.orderId());
+      saved[0] = saveAgv(v, v.status, AgvStatus.TO_PICKUP, t.orderId());
     });
     v.status = AgvStatus.TO_PICKUP;
     v.saved = saved[0];
     v.transportId = t.id();
+    Vehicle holder = holderOf(t.id());
+    v.rescueFrom = holder == null ? null : holder.id;
     v.chargerId = null;
     v.chargeTarget = AgvPhysics.RESUME_FROM_CHARGE;
     setRoute(v, t.fromNode(), c.approach());
@@ -184,12 +202,16 @@ public final class Fleet {
         stand(v, dt);
         idle(v);
       }
-      case FAULT -> stand(v, dt);
+      case FAULT -> {
+        stand(v, dt);
+        if (time.nowMs() >= v.faultUntilMs) repair(v);
+      }
     }
     if (v.driving() && arrived(v)) arrive(v);
   }
 
   private void idle(Vehicle v) {
+    if (v.heldLoad != null) return; // repaired, the replacement is on its way to take the load over
     if (v.chargeRequested) {
       v.chargeRequested = false;
       v.chargeTarget = AgvPhysics.MANUAL_CHARGE_TARGET;
@@ -239,6 +261,9 @@ public final class Fleet {
   }
 
   private boolean arrived(Vehicle v) {
+    if (v.status == AgvStatus.TO_PICKUP && v.rescueFrom != null && v.rescueFrom.equals(v.blockedBy)) {
+      return true; // up to the following distance behind the failed vehicle
+    }
     return v.route.isEmpty() && v.nodeId.equals(v.goal) && dispatcher.atNode(v);
   }
 
@@ -258,20 +283,24 @@ public final class Fleet {
       moveTransport(t, TransportStatus.LOADING, v.id, EventTypes.TRANSPORT_STATE);
       // stock leaves at pickup; a reservation already consumed (rescue of a failed load) is not taken twice
       if (t.kind() == TransportKind.SUPPLY && t.reservationId() != null) materials.consume(t.reservationId());
-      saved[0] = saveAgv(v, AgvStatus.LOADING, t.orderId());
+      saved[0] = saveAgv(v, v.status, AgvStatus.LOADING, t.orderId());
     });
     v.status = AgvStatus.LOADING;
     v.saved = saved[0];
     v.timerMs = AgvPhysics.LOAD_TIME_MS;
+    v.speed = 0;
+    Vehicle holder = holderOf(t.id());
+    if (holder != null) holder.heldLoad = null; // the load changes vehicles
+    v.rescueFrom = null;
   }
 
   private void finishLoading(Vehicle v) {
     TransportOrder t = transport(v.transportId);
-    Route r = graph.route(v.nodeId, t.toNode(), avoidNodes());
+    Route r = graph.route(dispatcher.anchor(v).node(), t.toNode(), avoidNodes());
     AgvRecord[] saved = new AgvRecord[1];
     work.inNewTransaction(() -> {
       moveTransport(t, TransportStatus.IN_TRANSIT, v.id, EventTypes.TRANSPORT_STATE);
-      saved[0] = saveAgv(v, AgvStatus.TO_DROP, t.orderId());
+      saved[0] = saveAgv(v, v.status, AgvStatus.TO_DROP, t.orderId());
     });
     v.status = AgvStatus.TO_DROP;
     v.saved = saved[0];
@@ -283,7 +312,7 @@ public final class Fleet {
     AgvRecord[] saved = new AgvRecord[1];
     work.inNewTransaction(() -> {
       moveTransport(t, TransportStatus.UNLOADING, v.id, EventTypes.TRANSPORT_STATE);
-      saved[0] = saveAgv(v, AgvStatus.UNLOADING, t.orderId());
+      saved[0] = saveAgv(v, v.status, AgvStatus.UNLOADING, t.orderId());
     });
     v.status = AgvStatus.UNLOADING;
     v.saved = saved[0];
@@ -303,7 +332,7 @@ public final class Fleet {
         transports.update(t.withStatus(TransportStatus.DELIVERED, v.id));
         events.publish(EventTypes.TRANSPORT_DELIVERED, SOURCE, Severity.SUCCESS, t.orderId(),
             new Payloads.TransportDelivered(t.id(), t.kind(), t.orderId(), t.materialId(), t.quantity(), t.to()));
-        saved[0] = saveAgv(v, AgvStatus.IDLE, t.orderId());
+        saved[0] = saveAgv(v, v.status, AgvStatus.IDLE, t.orderId());
       });
     } catch (DomainException notStored) {
       // the finished goods store is full: stay in UNLOADING, retry every step, warn once
@@ -335,10 +364,122 @@ public final class Fleet {
         keepOnlyNextNode(v);
       } else if (v.status == AgvStatus.TO_DROP && !t.toNode().equals(v.goal)) {
         v.goal = t.toNode();
-        v.route.clear();
         replan(v);
       }
     }
+  }
+
+  // ---- faults and blocks ---------------------------------------------------------------------------
+
+  /**
+   * The vehicle stops where it is. An unloaded transport goes back to the queue; a loaded one fails and is
+   * picked up where the vehicle stands, by a replacement or by this vehicle once it is repaired.
+   */
+  public void injectFault(String agvId, String faultTypeId) {
+    String type = faultTypeId == null ? "NAV" : faultTypeId;
+    String label = switch (type) {
+      case "NAV" -> "Navigationsfehler (Lidar)";
+      case "COMM" -> "Kommunikationsfehler (Feldbus)";
+      default -> throw DomainException.invalid("Störungsart " + type + " gibt es für AGVs nicht (NAV, COMM)");
+    };
+    Vehicle v = vehicle(agvId);
+    AgvStatus.RULES.move(v.id, v.status, AgvStatus.FAULT);
+    TransportOrder t = v.transportId == null ? null : transport(v.transportId);
+    boolean loaded = t != null && (t.status() == TransportStatus.LOADING || t.status() == TransportStatus.IN_TRANSIT
+        || t.status() == TransportStatus.UNLOADING);
+    String correlation = t == null ? null : t.orderId();
+    AgvRecord[] saved = new AgvRecord[1];
+    work.inNewTransaction(() -> {
+      saved[0] = saveAgv(v, v.status, AgvStatus.FAULT, correlation);
+      events.publish(EventTypes.AGV_FAULT, SOURCE, Severity.ERROR, correlation,
+          new Payloads.AgvFault(v.id, type, label));
+      if (t == null) return;
+      TransportStatus to = loaded ? TransportStatus.FAILED : TransportStatus.CREATED;
+      TransportStatus.RULES.move(t.id(), t.status(), to);
+      // a failed load is picked up where the vehicle stopped
+      transports.update(loaded ? t.withStatus(to, v.id).withPickup(v.nodeId) : t.withStatus(to, null));
+      events.publish(loaded ? EventTypes.TRANSPORT_FAILED : EventTypes.TRANSPORT_STATE, SOURCE,
+          loaded ? Severity.ERROR : Severity.WARNING, t.orderId(),
+          new Payloads.TransportStateChanged(t.id(), t.status(), to, loaded ? v.id : null));
+    });
+    v.status = AgvStatus.FAULT;
+    v.saved = saved[0];
+    v.speed = 0;
+    v.blockedBy = null;
+    v.faultTypeId = type;
+    v.faultUntilMs = time.nowMs() + AgvPhysics.FAULT_REPAIR_MS;
+    v.rescueFrom = null;
+    v.goal = null;
+    if (t != null) {
+      v.transportId = null;
+      if (loaded) v.heldLoad = t.id();
+    }
+    graphChanged();
+    Set<String> blocked = avoidNodes();
+    for (Vehicle u : vehicles) {
+      if (u != v && u.driving() && routeUsesNode(u, blocked)) replan(u);
+    }
+  }
+
+  private void repair(Vehicle v) {
+    change(v, AgvStatus.IDLE, null);
+    v.faultTypeId = null;
+    graphChanged(); // vehicles waiting for a route replan in their next move
+    if (v.heldLoad == null) return;
+    TransportOrder t = transport(v.heldLoad);
+    if (t.status() == TransportStatus.FAILED || t.status() == TransportStatus.CREATED) takeBack(v, t);
+  }
+
+  /** A repaired vehicle that still carries its load continues the transport itself; the load is on board. */
+  private void takeBack(Vehicle v, TransportOrder t) {
+    Route r = graph.route(dispatcher.anchor(v).node(), t.toNode(), avoidNodes());
+    AgvRecord[] saved = new AgvRecord[1];
+    work.inNewTransaction(() -> {
+      TransportOrder a = moveTransport(t, TransportStatus.ASSIGNED, v.id,
+          t.status() == TransportStatus.FAILED ? EventTypes.TRANSPORT_REASSIGNED : EventTypes.TRANSPORT_ASSIGNED);
+      TransportOrder b = moveTransport(a, TransportStatus.TO_PICKUP, v.id, EventTypes.TRANSPORT_STATE);
+      TransportOrder c = moveTransport(b, TransportStatus.LOADING, v.id, EventTypes.TRANSPORT_STATE);
+      moveTransport(c, TransportStatus.IN_TRANSIT, v.id, EventTypes.TRANSPORT_STATE);
+      agvState(v, AgvStatus.IDLE, AgvStatus.TO_PICKUP, t.orderId());
+      agvState(v, AgvStatus.TO_PICKUP, AgvStatus.LOADING, t.orderId());
+      saved[0] = saveAgv(v, AgvStatus.LOADING, AgvStatus.TO_DROP, t.orderId());
+    });
+    v.status = AgvStatus.TO_DROP;
+    v.saved = saved[0];
+    v.transportId = t.id();
+    v.heldLoad = null;
+    v.chargerId = null;
+    setRoute(v, t.toNode(), r);
+  }
+
+  public void setEdgeBlocked(String edgeId, boolean blocked) {
+    work.inNewTransaction(() -> store.setEdgeBlocked(edgeId, blocked));
+    graph.setBlocked(edgeId, blocked);
+    graphChanged();
+    if (!blocked) return; // waiting vehicles replan in their next move
+    for (Vehicle u : vehicles) if (u.driving() && routeUsesEdge(u, edgeId)) replan(u);
+  }
+
+  private void graphChanged() {
+    reportedBlocked.clear();
+  }
+
+  /** The edges still ahead; the one the vehicle is on right now is not counted, it drives that one to its end. */
+  private boolean routeUsesEdge(Vehicle u, String edgeId) {
+    String prev = dispatcher.atNode(u) ? u.nodeId : null;
+    for (String n : u.route) {
+      if (prev != null) {
+        var e = graph.edge(prev, n);
+        if (e != null && e.id().equals(edgeId)) return true;
+      }
+      prev = n;
+    }
+    return false;
+  }
+
+  private static boolean routeUsesNode(Vehicle u, Set<String> nodes) {
+    for (String n : u.route) if (nodes.contains(n)) return true;
+    return false;
   }
 
   // ---- motion --------------------------------------------------------------------------------------
@@ -514,23 +655,25 @@ public final class Fleet {
   /** Changes the AGV state in a unit of its own and publishes agv.state. */
   void change(Vehicle v, AgvStatus to, String correlationId) {
     AgvRecord[] saved = new AgvRecord[1];
-    work.inNewTransaction(() -> saved[0] = saveAgv(v, to, correlationId));
+    work.inNewTransaction(() -> saved[0] = saveAgv(v, v.status, to, correlationId));
     v.status = to;
     v.saved = saved[0];
   }
 
-  /** Inside a unit: checks the transition, stores the AGV, publishes agv.state. */
-  private AgvRecord saveAgv(Vehicle v, AgvStatus to, String correlationId) {
-    AgvStatus from = v.status;
-    AgvStatus.RULES.move(v.id, from, to);
+  /** Inside a unit: checks the transition, publishes agv.state and stores the AGV in its new state. */
+  private AgvRecord saveAgv(Vehicle v, AgvStatus from, AgvStatus to, String correlationId) {
+    agvState(v, from, to, correlationId);
     AgvRecord r = v.record();
-    AgvRecord saved = store.save(new AgvRecord(r.id(), r.name(), to, r.nodeId(), r.battery(), r.enabled(),
-        r.version()));
+    return store.save(new AgvRecord(r.id(), r.name(), to, r.nodeId(), r.battery(), r.enabled(), r.version()));
+  }
+
+  /** Inside a unit: checks the transition and publishes agv.state, without storing. */
+  private void agvState(Vehicle v, AgvStatus from, AgvStatus to, String correlationId) {
+    AgvStatus.RULES.move(v.id, from, to);
     if (from != to) {
       events.publish(EventTypes.AGV_STATE, SOURCE, Severity.INFO, correlationId,
           new Payloads.AgvStateChanged(v.id, from, to));
     }
-    return saved;
   }
 
   /** Inside a unit: checks the transition, stores the transport, publishes the event. */

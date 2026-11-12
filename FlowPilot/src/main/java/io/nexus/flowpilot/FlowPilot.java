@@ -119,6 +119,15 @@ public final class FlowPilot {
     fleet.sendToCharge(agvId);
   }
 
+  /** @param faultTypeId NAV or COMM; null means NAV */
+  public synchronized void injectFault(String agvId, String faultTypeId) {
+    fleet.injectFault(agvId, faultTypeId);
+  }
+
+  public synchronized void setEdgeBlocked(String edgeId, boolean blocked) {
+    fleet.setEdgeBlocked(edgeId, blocked);
+  }
+
   public PathGraph graph() {
     return graph;
   }
