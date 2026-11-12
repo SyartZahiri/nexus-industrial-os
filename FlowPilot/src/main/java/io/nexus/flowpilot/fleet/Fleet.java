@@ -84,7 +84,11 @@ public final class Fleet {
     throw DomainException.notFound("AGV", id);
   }
 
-  /** Nodes no route may pass: where failed vehicles stand (and the node ahead if one stopped on an edge). */
+  /**
+   * Nodes no route may pass (the target of a route is always allowed): where failed vehicles stand, and the node
+   * ahead if one stopped on an edge; where a repaired vehicle waits to hand over its load; and chargers with a
+   * parked vehicle, which would otherwise block a detour through the charger spur for good.
+   */
   Set<String> avoidNodes() {
     return avoidNodesExcept(null);
   }
@@ -92,11 +96,20 @@ public final class Fleet {
   private Set<String> avoidNodesExcept(Vehicle except) {
     TreeSet<String> nodes = new TreeSet<>();
     for (Vehicle v : vehicles) {
-      if (v.status != AgvStatus.FAULT || v == except) continue;
-      nodes.add(v.nodeId);
-      if (!v.route.isEmpty() && !dispatcher.atNode(v)) nodes.add(v.route.get(0));
+      if (v == except) continue;
+      if (v.status == AgvStatus.FAULT || v.heldLoad != null) {
+        nodes.add(v.nodeId);
+        if (!v.route.isEmpty() && !dispatcher.atNode(v)) nodes.add(v.route.get(0));
+      } else if (parked(v)) {
+        nodes.add(v.nodeId);
+      }
     }
     return nodes;
+  }
+
+  private boolean parked(Vehicle v) {
+    return (v.status == AgvStatus.IDLE || v.status == AgvStatus.CHARGING || v.status == AgvStatus.OFFLINE)
+        && atOwnCharger(v);
   }
 
   private Vehicle holderOf(String transportId) {
@@ -271,7 +284,14 @@ public final class Fleet {
     switch (v.status) {
       case TO_PICKUP -> arrivedAtPickup(v);
       case TO_DROP -> arrivedAtDrop(v);
-      case TO_CHARGE -> change(v, v.enabled ? AgvStatus.CHARGING : AgvStatus.OFFLINE, null);
+      case TO_CHARGE -> {
+        change(v, v.enabled ? AgvStatus.CHARGING : AgvStatus.OFFLINE, null);
+        // parked now: whoever planned a detour through this charger plans again
+        Set<String> here = Set.of(v.nodeId);
+        for (Vehicle u : vehicles) {
+          if (u != v && u.driving() && !v.nodeId.equals(u.goal) && routeUsesNode(u, here)) replan(u);
+        }
+      }
       default -> { }
     }
   }

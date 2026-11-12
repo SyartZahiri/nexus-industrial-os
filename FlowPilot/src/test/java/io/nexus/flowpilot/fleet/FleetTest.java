@@ -216,6 +216,21 @@ class FleetTest {
     assertThat(delivered.to().id()).isEqualTo("CNC-04");
   }
 
+  /** Found by the self-test: the detour around LN_-19>LN_-15 runs through the spur of CH-1, where AGV-01 parks. */
+  @Test
+  void detourNeverLeadsThroughAParkedVehicle() {
+    var f = new FleetFixture();
+    String id = f.supply("RM-GH200", "CNC-01", 5, Priority.NORMAL);
+    f.runUntil(() -> f.transport(id).status() == TransportStatus.IN_TRANSIT, 120);
+    String agv = f.transport(id).agvId();
+    assertThat(agv).isNotEqualTo("AGV-01");
+    f.fp.setEdgeBlocked("LN_-19>LN_-15", true);
+    assertThat(f.vehicle(agv).route()).doesNotContain("D_CH1");
+    f.run(60);
+    f.fp.setEdgeBlocked("LN_-19>LN_-15", false);
+    f.runUntil(() -> f.transport(id).status() == TransportStatus.DELIVERED, 120);
+  }
+
   @Test
   void sameSeedSameEvents() {
     assertThat(scriptedRun()).isEqualTo(scriptedRun());
