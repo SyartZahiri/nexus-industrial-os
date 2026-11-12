@@ -15,6 +15,8 @@ import io.nexus.contracts.port.ProductCatalog;
 import io.nexus.contracts.port.TransportService;
 import io.nexus.contracts.sim.SimTime;
 import io.nexus.contracts.state.MachineStatus;
+import io.nexus.smartfactory.analytics.Analytics;
+import io.nexus.smartfactory.analytics.Kpis;
 import io.nexus.smartfactory.catalog.Catalog;
 import io.nexus.smartfactory.orders.NewOrder;
 import io.nexus.smartfactory.orders.OrderChange;
@@ -23,12 +25,15 @@ import io.nexus.smartfactory.planning.DispatchRule;
 import io.nexus.smartfactory.planning.Plan;
 import io.nexus.smartfactory.production.FaultHandling;
 import io.nexus.smartfactory.production.ProductionFlow;
+import io.nexus.smartfactory.store.MachineRecord;
 import io.nexus.smartfactory.store.MachineStore;
 import io.nexus.smartfactory.store.Operation;
+import io.nexus.smartfactory.store.OperationMaterial;
 import io.nexus.smartfactory.store.OrderStore;
 import io.nexus.smartfactory.store.ProductionOrder;
 import io.nexus.smartfactory.store.memory.MemoryMachineStore;
 import io.nexus.smartfactory.store.memory.MemoryOrderStore;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -104,6 +109,33 @@ public final class SmartFactory implements MachineFeedback {
 
   public synchronized List<Operation> operations(String orderId) {
     return orders.operations(orderId);
+  }
+
+  /** @throws io.nexus.contracts.DomainException NOT_FOUND */
+  public synchronized ProductionOrder order(String orderId) {
+    return orderService.order(orderId);
+  }
+
+  /** Containers of every step of the order, by step. */
+  public synchronized List<OperationMaterial> materials(String orderId) {
+    List<OperationMaterial> out = new ArrayList<>();
+    for (Operation op : orders.operations(orderId)) out.addAll(orders.materials(orderId, op.seq()));
+    return out;
+  }
+
+  /** Ordered by id. */
+  public synchronized List<MachineRecord> machines() {
+    return machineStore.machines();
+  }
+
+  /** The operation running on the machine, or null. */
+  public synchronized Operation runningOn(String machineId) {
+    for (Operation op : orders.operationsOnMachine(machineId)) if (op.status() == Operation.Status.RUNNING) return op;
+    return null;
+  }
+
+  public synchronized Kpis kpis(long fromMs, long toMs) {
+    return new Analytics(orders, machineStore, catalog).compute(fromMs, toMs);
   }
 
   // ---- machine commands: checked against the machine's state, carried out by the simulation -------------
