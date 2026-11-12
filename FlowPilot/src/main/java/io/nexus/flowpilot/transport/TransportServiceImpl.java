@@ -78,6 +78,9 @@ public final class TransportServiceImpl implements TransportService {
       throw DomainException.invalid("Transport braucht Art, Quelle und Ziel");
     }
     if (r.quantity() <= 0) throw DomainException.invalid("Menge muss positiv sein");
+    if (r.kind() != TransportKind.WIP && (r.materialId() == null || r.materialId().isBlank())) {
+      throw DomainException.invalid("Versorgung und Einlagerung brauchen ein Material");
+    }
     if (r.kind() == TransportKind.SUPPLY) {
       Reservation res = r.reservationId() == null ? null : stock.reservation(r.reservationId()).orElse(null);
       boolean matches = res != null && res.status() == Reservation.Status.ACTIVE

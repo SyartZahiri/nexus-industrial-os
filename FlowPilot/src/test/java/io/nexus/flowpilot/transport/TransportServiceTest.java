@@ -132,6 +132,10 @@ class TransportServiceTest {
         Place.machineOut("QC-01"), Place.storage("RAW-A"), Priority.NORMAL, null);
     assertKind(org.assertj.core.api.Assertions.catchThrowable(() -> transports.requestTransport(toRaw)),
         DomainException.Kind.INVALID);
+    var withoutMaterial = new TransportRequest("TR-3", TransportKind.PUTAWAY, "PO-0001", null, 5,
+        Place.machineOut("QC-01"), Place.storage("FG-A"), Priority.NORMAL, null);
+    assertKind(org.assertj.core.api.Assertions.catchThrowable(() -> transports.requestTransport(withoutMaterial)),
+        DomainException.Kind.INVALID);
     var ok = new TransportRequest("TR-2", TransportKind.PUTAWAY, "PO-0001", "FG-GH200", 5,
         Place.machineOut("QC-01"), Place.storage("FG-A"), Priority.NORMAL, null);
     TransportOrder t = store.byId(transports.requestTransport(ok)).orElseThrow();
