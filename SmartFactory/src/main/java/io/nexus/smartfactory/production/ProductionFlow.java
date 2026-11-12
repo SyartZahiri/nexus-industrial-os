@@ -114,7 +114,7 @@ public final class ProductionFlow {
   private void start(MachineRecord machine, Operation op) {
     ProductionOrder o = service.order(op.orderId());
     var kind = SmartFactoryMasterData.machine(machine.id()).kind();
-    int quantity = op.seq() == 1 ? o.quantity() : orders.operations(o.id()).get(op.seq() - 2).good();
+    int quantity = jobQuantity(o, op);
     long setup = o.productId().equals(machine.lastProductId()) ? 0 : SmartFactoryMasterData.setupMs(kind);
     long process = (long) quantity * catalog.step(o.productId(), op.seq()).baseTimeS() * 1000L;
     long now = time.nowMs();
@@ -125,6 +125,11 @@ public final class ProductionFlow {
         new Payloads.OperationChanged(o.id(), op.seq(), machine.id()));
     machines.save(new MachineRecord(machine.id(), machine.status(), o.productId(), machine.version()));
     if (o.status() == OrderStatus.RELEASED) service.move(o, OrderStatus.IN_PROGRESS, "erster Arbeitsgang gestartet");
+  }
+
+  /** The first step processes the order quantity, every later one the good parts of its predecessor. */
+  public int jobQuantity(ProductionOrder o, Operation op) {
+    return op.seq() == 1 ? o.quantity() : orders.operations(o.id()).get(op.seq() - 2).good();
   }
 
   /** The batch of a running operation is done: book it and send the good parts on. */

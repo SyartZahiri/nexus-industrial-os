@@ -247,8 +247,12 @@ public final class OrderService {
         if (op.finished() || op.status() == Operation.Status.RUNNING) continue;
         Plan.PlannedOp p = plan.op(o.id(), op.seq());
         String machine = p == null ? op.machineId() : p.machineId();
-        if (op.machineId() != null && !op.machineId().equals(machine)) relocate(o, op, machine, records);
-        var updated = new Operation(op.id(), op.orderId(), op.seq(), op.process(), machine, op.status(),
+        Operation.Status status = op.status();
+        if (op.machineId() != null && !op.machineId().equals(machine)) {
+          relocate(o, op, machine, records);
+          if (status == Operation.Status.READY) status = Operation.Status.WAITING_MATERIAL; // containers on the way
+        }
+        var updated = new Operation(op.id(), op.orderId(), op.seq(), op.process(), machine, status,
             p == null ? null : p.startMs(), p == null ? null : p.endMs(), op.startedAtMs(), op.endedAtMs(),
             op.good(), op.scrap());
         if (!updated.equals(op)) orders.saveOperation(updated);

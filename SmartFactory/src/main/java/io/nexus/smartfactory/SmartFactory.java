@@ -21,6 +21,7 @@ import io.nexus.smartfactory.orders.OrderChange;
 import io.nexus.smartfactory.orders.OrderService;
 import io.nexus.smartfactory.planning.DispatchRule;
 import io.nexus.smartfactory.planning.Plan;
+import io.nexus.smartfactory.production.FaultHandling;
 import io.nexus.smartfactory.production.ProductionFlow;
 import io.nexus.smartfactory.store.MachineStore;
 import io.nexus.smartfactory.store.Operation;
@@ -45,6 +46,7 @@ public final class SmartFactory implements MachineFeedback {
   private final Catalog catalog = new Catalog();
   private final OrderService orderService;
   private final ProductionFlow flow;
+  private final FaultHandling faults;
 
   public SmartFactory(OrderStore orders, MachineStore machineStore, EventBus bus, UnitOfWork work, SimTime time,
                       IdSource ids, Supplier<MaterialService> materials, Supplier<TransportService> transports,
@@ -54,6 +56,7 @@ public final class SmartFactory implements MachineFeedback {
     this.work = work;
     this.orderService = new OrderService(orders, machineStore, bus, time, ids, catalog, materials, transports);
     this.flow = new ProductionFlow(orders, machineStore, orderService, catalog, time, materials, transports, machines);
+    this.faults = new FaultHandling(orders, machineStore, orderService, flow, machines);
     bus.register(new EventConsumer() {
       @Override public String name() { return CONSUMER; }
       @Override public void on(NexusEvent event) { consume(event); }
@@ -103,19 +106,51 @@ public final class SmartFactory implements MachineFeedback {
     return orders.operations(orderId);
   }
 
+  // ---- machine commands: checked against the machine's state, carried out by the simulation -------------
+
+  public synchronized void startMachine(String machineId) {
+    faults.start(machineId);
+  }
+
+  public synchronized void stopMachine(String machineId) {
+    faults.stop(machineId);
+  }
+
+  /** @param faultTypeId null lets the simulation pick a fault valid for the machine kind */
+  public synchronized void injectFault(String machineId, String faultTypeId) {
+    faults.injectFault(machineId, faultTypeId);
+  }
+
+  public synchronized void repairMachine(String machineId) {
+    faults.repair(machineId);
+  }
+
+  public synchronized void maintainMachine(String machineId) {
+    faults.maintain(machineId);
+  }
+
+  private MachineStatus knownStatus(String machineId) {
+    for (var r : machineStore.machines()) if (r.id().equals(machineId)) return r.status();
+    return null;
+  }
+
   // ---- MachineFeedback: called by the simulation --------------------------------------------------------
 
   @Override
   public void statusChanged(String machineId, MachineStatus from, MachineStatus to) {
     inUnit(() -> {
-      if (flow.statusChanged(machineId, from, to)) flow.advance();
+      MachineStatus before = knownStatus(machineId);
+      if (flow.statusChanged(machineId, from, to)) {
+        faults.afterStatusChange(machineId, before, to);
+        flow.advance();
+      }
       return null;
     });
   }
 
   @Override
   public void faultRaised(String machineId, String faultTypeId, String label, boolean scrappedWorkpiece) {
-    // Task 6
+    inUnit(() -> { faults.faultRaised(machineId, faultTypeId, label, scrappedWorkpiece); flow.advance(); return null; });
   }
 
   @Override
