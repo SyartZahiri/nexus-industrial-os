@@ -118,6 +118,13 @@ public final class FlowPilot {
     }
   }
 
+  /** Goods issue, e.g. shipping finished goods until RouteMind collects them. */
+  public void issue(String materialId, String locationId, int quantity) {
+    synchronized (lock) {
+      work.inNewTransaction(() -> materials.issue(materialId, locationId, quantity));
+    }
+  }
+
   public List<VehicleView> vehicles() {
     synchronized (lock) {
       return fleet.views();

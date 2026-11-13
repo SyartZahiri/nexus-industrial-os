@@ -222,6 +222,22 @@ public final class MaterialServiceImpl implements MaterialService {
     receive(materialId, locationId, quantity, null);
   }
 
+  /**
+   * Goods issue, e.g. shipping finished goods. Only unreserved stock can leave. Runs in the caller's unit of work.
+   */
+  public void issue(String materialId, String locationId, int quantity) {
+    material(materialId);
+    location(locationId);
+    if (quantity <= 0) throw DomainException.invalid("Menge muss positiv sein");
+    StockLine l = lineOf(materialId, locationId);
+    if (l.available() < quantity) {
+      throw DomainException.conflict("Auf " + locationId + " sind nur " + l.available() + " " + materialId + " frei");
+    }
+    var changed = new StockLine(materialId, locationId, l.onHand() - quantity, l.reserved());
+    stock.saveLine(changed);
+    stockChanged(changed, null);
+  }
+
   /** Capacity of the location minus everything on hand there. */
   public int freeRoom(String locationId) {
     int used = 0;
