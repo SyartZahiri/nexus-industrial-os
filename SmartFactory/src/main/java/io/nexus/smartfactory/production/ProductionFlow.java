@@ -123,7 +123,7 @@ public final class ProductionFlow {
     long now = time.nowMs();
     // the machine cannot be rolled back: it gets the job only once the RUNNING state is committed
     var job = new MachineJob(machine.id(), o.id(), op.seq(), o.productId(), quantity, setup, process);
-    work.afterCommit(() -> control.get().startJob(job));
+    work.afterCommit(() -> handOver(job));
     orders.saveOperation(new Operation(op.id(), op.orderId(), op.seq(), op.process(), machine.id(),
         Operation.Status.RUNNING, now, now + setup + process, now, null, 0, 0));
     service.publish(EventTypes.OPERATION_STARTED, Severity.INFO, o.id(),
@@ -257,6 +257,31 @@ public final class ProductionFlow {
     service.publish(EventTypes.MACHINE_STATUS, to == MachineStatus.FAULT ? Severity.ERROR : Severity.INFO, null,
         new Payloads.MachineStatusChanged(machineId, from, to));
     return true;
+  }
+
+  /**
+   * Gives the committed job to the machine. If the machine refuses (unreachable, already busy), the operation goes
+   * back to READY in a unit of its own, so no operation stays RUNNING without a machine working on it; the next
+   * time production moves on, it is handed over again.
+   */
+  private void handOver(MachineJob job) {
+    try {
+      control.get().startJob(job);
+    } catch (RuntimeException refused) {
+      work.inNewTransaction(() -> {
+        for (Operation op : orders.operations(job.orderId())) {
+          if (op.seq() == job.stepSeq() && op.status() == Operation.Status.RUNNING
+              && job.machineId().equals(op.machineId())) {
+            orders.saveOperation(new Operation(op.id(), op.orderId(), op.seq(), op.process(), op.machineId(),
+                Operation.Status.READY, op.plannedStartMs(), op.plannedEndMs(), null, null, 0, 0));
+          }
+        }
+        String why = refused instanceof io.nexus.contracts.DomainException
+            || refused instanceof IllegalTransitionException ? refused.getMessage() : refused.getClass().getSimpleName();
+        service.decision(job.orderId(), Severity.WARNING, job.machineId(), "Auftrag zurückgestellt", List.of(),
+            "Maschine hat den Auftrag nicht angenommen: " + why);
+      });
+    }
   }
 
   private void warn(String orderId, String subject, String reason) {

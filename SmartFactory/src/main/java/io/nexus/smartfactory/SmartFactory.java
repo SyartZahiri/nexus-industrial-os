@@ -238,6 +238,8 @@ public final class SmartFactory implements MachineFeedback {
         }
         return;
       }
+      // handling an event is SmartFactory's own work too: events its reactions cause wait until it is done
+      commandDepth++;
       try {
         if (event.type().equals(EventTypes.STOCK_CHANGED)) {
           orderService.stockChanged(((Payloads.StockChanged) event.payload()).materialId());
@@ -247,9 +249,54 @@ public final class SmartFactory implements MachineFeedback {
           return;
         }
         moveOn();
+        drainDeferred();
       } catch (RuntimeException | Error e) {
+        clearDeferred();
         orderService.forgetPlan();
         throw e;
+      } finally {
+        commandDepth--;
+      }
+    }
+    drainAfterUnits();
+  }
+
+  /** Follow-up of events that arrived during SmartFactory's own work, in the current unit of work. */
+  private void drainDeferred() {
+    while (!deferredStock.isEmpty()) {
+      String materialId = deferredStock.iterator().next();
+      deferredStock.remove(materialId);
+      orderService.stockChanged(materialId);
+      moveOn();
+    }
+    if (deferredMoveOn) {
+      deferredMoveOn = false;
+      moveOn();
+    }
+  }
+
+  private void clearDeferred() {
+    deferredStock.clear();
+    deferredMoveOn = false;
+  }
+
+  /**
+   * Events can still arrive after a unit has committed, while its after-commit work runs (event delivery, job
+   * hand-over). Once SmartFactory is idle again, their follow-up runs in units of its own.
+   */
+  private void drainAfterUnits() {
+    synchronized (lock) {
+      while (commandDepth == 0 && (!deferredStock.isEmpty() || deferredMoveOn)) {
+        commandDepth++;
+        try {
+          work.inNewTransaction(this::drainDeferred);
+        } catch (RuntimeException | Error e) {
+          clearDeferred();
+          orderService.forgetPlan();
+          throw e;
+        } finally {
+          commandDepth--;
+        }
       }
     }
   }
@@ -267,26 +314,16 @@ public final class SmartFactory implements MachineFeedback {
       try {
         work.inNewTransaction(() -> {
           result[0] = action.get();
-          // follow-up of events that arrived during the command, in the command's own unit of work
-          while (!deferredStock.isEmpty()) {
-            String materialId = deferredStock.iterator().next();
-            deferredStock.remove(materialId);
-            orderService.stockChanged(materialId);
-            moveOn();
-          }
-          if (deferredMoveOn) {
-            deferredMoveOn = false;
-            moveOn();
-          }
+          drainDeferred();          // events that arrived during the command, in the command's own unit
         });
       } catch (RuntimeException | Error e) {
-        deferredStock.clear();
-        deferredMoveOn = false;
+        clearDeferred();
         orderService.forgetPlan();
         throw e;
       } finally {
         commandDepth--;
       }
+      drainAfterUnits();
       @SuppressWarnings("unchecked") T t = (T) result[0];
       return t;
     }
