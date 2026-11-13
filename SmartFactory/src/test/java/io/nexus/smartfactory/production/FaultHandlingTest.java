@@ -79,6 +79,28 @@ class FaultHandlingTest {
     assertThat(job(id, 1).machineId()).isEqualTo(alternative);
   }
 
+  /** FlowPilot has unloaded, but its transport.delivered is still queued when the machine fails. */
+  @Test
+  void deliveryNotYetSeenBySmartFactoryIsMovedInsteadOfRedirected() {
+    String id = create("GH200", 2);
+    FakeTransport supply = transportsOf(id).getFirst();
+
+    h.work.inNewTransaction(() -> {
+      h.transports.deliver(supply.id());
+      h.factory.statusChanged("CNC-01", IDLE, FAULT);
+    });
+
+    String alternative = op(id, 1).machineId();
+    assertThat(alternative).isIn("CNC-02", "CNC-04");
+    FakeTransport move = transportsOf(id).getLast();
+    assertThat(move.request().kind()).isEqualTo(TransportKind.WIP);
+    assertThat(move.request().from()).isEqualTo(Place.machineIn("CNC-01"));
+    assertThat(move.to()).isEqualTo(Place.machineIn(alternative));
+    assertThat(h.machines.jobs()).as("the late delivery at CNC-01 starts nothing").isEmpty();
+    h.transports.deliver(move.id());
+    assertThat(job(id, 1).machineId()).isEqualTo(alternative);
+  }
+
   @Test
   void deliveredMaterialIsMovedToTheAlternativeMachine() {
     h.factory.statusChanged("CNC-01", IDLE, STOPPED);

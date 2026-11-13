@@ -5,6 +5,7 @@ import io.nexus.contracts.Domain.TransportKind;
 import io.nexus.contracts.Place;
 import io.nexus.contracts.event.EventTypes;
 import io.nexus.contracts.event.Payloads;
+import io.nexus.contracts.event.UnitOfWork;
 import io.nexus.contracts.port.MachineControl;
 import io.nexus.contracts.port.MachineControl.MachineJob;
 import io.nexus.contracts.port.MaterialService;
@@ -39,13 +40,15 @@ public final class ProductionFlow {
   private final OrderService service;
   private final Catalog catalog;
   private final SimTime time;
+  private final UnitOfWork work;
   private final Supplier<MaterialService> materials;
   private final Supplier<TransportService> transports;
   private final Supplier<MachineControl> control;
 
   public ProductionFlow(OrderStore orders, MachineStore machines, OrderService service, Catalog catalog, SimTime time,
-                        Supplier<MaterialService> materials, Supplier<TransportService> transports,
+                        UnitOfWork work, Supplier<MaterialService> materials, Supplier<TransportService> transports,
                         Supplier<MachineControl> control) {
+    this.work = work;
     this.orders = orders;
     this.machines = machines;
     this.service = service;
@@ -118,7 +121,9 @@ public final class ProductionFlow {
     long setup = o.productId().equals(machine.lastProductId()) ? 0 : SmartFactoryMasterData.setupMs(kind);
     long process = (long) quantity * catalog.step(o.productId(), op.seq()).baseTimeS() * 1000L;
     long now = time.nowMs();
-    control.get().startJob(new MachineJob(machine.id(), o.id(), op.seq(), o.productId(), quantity, setup, process));
+    // the machine cannot be rolled back: it gets the job only once the RUNNING state is committed
+    var job = new MachineJob(machine.id(), o.id(), op.seq(), o.productId(), quantity, setup, process);
+    work.afterCommit(() -> control.get().startJob(job));
     orders.saveOperation(new Operation(op.id(), op.orderId(), op.seq(), op.process(), machine.id(),
         Operation.Status.RUNNING, now, now + setup + process, now, null, 0, 0));
     service.publish(EventTypes.OPERATION_STARTED, Severity.INFO, o.id(),

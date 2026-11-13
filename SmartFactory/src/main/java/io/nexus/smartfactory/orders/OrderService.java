@@ -279,8 +279,12 @@ public final class OrderService {
     for (OperationMaterial m : orders.materials(o.id(), op.seq())) {
       if (m.transportId() == null) continue; // waits for a conveyor hand-over, nothing to move
       if (!m.delivered()) {
-        transports.get().redirect(m.transportId(), Place.machineIn(to));
-        continue;
+        try {
+          transports.get().redirect(m.transportId(), Place.machineIn(to));
+          continue;
+        } catch (IllegalTransitionException deliveredMeanwhile) {
+          // FlowPilot unloaded it, its transport.delivered is still on the way: move it like a delivered one
+        }
       }
       String transportId = transports.get().requestTransport(new TransportRequest(ids.next(o.id() + "/M" + op.seq()),
           TransportKind.WIP, o.id(), m.materialId(), m.quantity(), Place.machineIn(from), Place.machineIn(to),

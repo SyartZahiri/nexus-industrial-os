@@ -14,7 +14,17 @@ public final class FakeMachineControl implements MachineControl {
   @Override public void injectFault(String machineId, String faultTypeId) { commands.add("fault " + machineId + " " + faultTypeId); }
   @Override public void repair(String machineId) { commands.add("repair " + machineId); }
   @Override public void maintain(String machineId) { commands.add("maintain " + machineId); }
-  @Override public void startJob(MachineJob job) { jobs.add(job); }
+  private java.util.function.Consumer<MachineJob> onStartJob = job -> {};
+
+  @Override public void startJob(MachineJob job) {
+    jobs.add(job);
+    onStartJob.accept(job);
+  }
+
+  /** Lets a test look at the state SmartFactory is in when the job arrives. */
+  public void onStartJob(java.util.function.Consumer<MachineJob> listener) {
+    onStartJob = listener;
+  }
 
   public List<MachineJob> jobs() {
     return List.copyOf(jobs);

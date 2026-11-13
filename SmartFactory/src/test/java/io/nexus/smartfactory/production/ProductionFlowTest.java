@@ -127,6 +127,31 @@ class ProductionFlowTest {
   }
 
   @Test
+  void planFollowsProduction() {
+    String id = create("FP12", 2);
+    deliverAll();
+    h.time.advance(200_000);
+    h.factory.jobFinished("CNC-02", id, 1, 2, 0);
+
+    assertThat(h.factory.plan().ops()).singleElement().satisfies(p -> {
+      assertThat(p.seq()).isEqualTo(2);
+      assertThat(p.startMs()).isGreaterThanOrEqualTo(200_000);
+    });
+    runToEnd();
+    assertThat(h.factory.plan().ops()).isEmpty();
+  }
+
+  /** A unit that rolls back after the command would leave the machine running a job SmartFactory forgot. */
+  @Test
+  void jobIsSentOnlyAfterItsOperationIsStoredAsRunning() {
+    List<Operation.Status> seen = new ArrayList<>();
+    h.machines.onStartJob(job -> seen.add(h.factory.operations(job.orderId()).get(job.stepSeq() - 1).status()));
+    create("FP12", 1);
+    deliverAll();
+    assertThat(seen).containsExactly(Operation.Status.RUNNING);
+  }
+
+  @Test
   void secondDeliveryOfTheSameTransportHasNoEffect() {
     String id = create("FP12", 2);
     FakeTransport supply = h.transports.transports().getFirst();

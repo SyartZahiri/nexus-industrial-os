@@ -38,13 +38,20 @@ import java.util.List;
 import java.util.function.Supplier;
 
 /**
- * Facade of SmartFactory. Every public method runs in its own unit of work and is synchronized.
- * Ports of other modules are suppliers, resolved on first use, so the module starts without them.
+ * Facade of SmartFactory. Every public method runs in its own unit of work.
+ *
+ * <p>Threading: every method holds the event bus's monitor, the same lock the bus holds while it delivers to
+ * SmartFactory's consumer. One lock, one order: a thread delivering events and a thread calling the facade can
+ * never wait for each other crosswise. Like the bus, MachineFeedback must not be called while the caller holds
+ * uncommitted writes. Commands to machines leave only after the unit that decided them has committed.
+ *
+ * <p>Ports of other modules are suppliers, resolved on first use, so the module starts without them.
  */
 public final class SmartFactory implements MachineFeedback {
   /** Name of the event consumer SmartFactory registers at the bus. */
   public static final String CONSUMER = "smartfactory";
 
+  private final Object lock;
   private final OrderStore orders;
   private final MachineStore machineStore;
   private final UnitOfWork work;
@@ -56,11 +63,13 @@ public final class SmartFactory implements MachineFeedback {
   public SmartFactory(OrderStore orders, MachineStore machineStore, EventBus bus, UnitOfWork work, SimTime time,
                       IdSource ids, Supplier<MaterialService> materials, Supplier<TransportService> transports,
                       Supplier<MachineControl> machines) {
+    this.lock = bus;
     this.orders = orders;
     this.machineStore = machineStore;
     this.work = work;
     this.orderService = new OrderService(orders, machineStore, bus, time, ids, catalog, materials, transports);
-    this.flow = new ProductionFlow(orders, machineStore, orderService, catalog, time, materials, transports, machines);
+    this.flow = new ProductionFlow(orders, machineStore, orderService, catalog, time, work, materials, transports,
+        machines);
     this.faults = new FaultHandling(orders, machineStore, orderService, flow, machines);
     bus.register(new EventConsumer() {
       @Override public String name() { return CONSUMER; }
@@ -95,70 +104,74 @@ public final class SmartFactory implements MachineFeedback {
   }
 
   public DispatchRule dispatchRule() {
-    return orderService.rule();
+    return locked(orderService::rule);
   }
 
-  /** The last computed plan. */
+  /** The last computed plan; it follows production as jobs finish and containers arrive. */
   public Plan plan() {
     return inUnit(orderService::plan);
   }
 
-  public synchronized List<ProductionOrder> orders() {
-    return orders.orders();
+  public List<ProductionOrder> orders() {
+    return locked(orders::orders);
   }
 
-  public synchronized List<Operation> operations(String orderId) {
-    return orders.operations(orderId);
+  public List<Operation> operations(String orderId) {
+    return locked(() -> orders.operations(orderId));
   }
 
   /** @throws io.nexus.contracts.DomainException NOT_FOUND */
-  public synchronized ProductionOrder order(String orderId) {
-    return orderService.order(orderId);
+  public ProductionOrder order(String orderId) {
+    return locked(() -> orderService.order(orderId));
   }
 
   /** Containers of every step of the order, by step. */
-  public synchronized List<OperationMaterial> materials(String orderId) {
-    List<OperationMaterial> out = new ArrayList<>();
-    for (Operation op : orders.operations(orderId)) out.addAll(orders.materials(orderId, op.seq()));
-    return out;
+  public List<OperationMaterial> materials(String orderId) {
+    return locked(() -> {
+      List<OperationMaterial> out = new ArrayList<>();
+      for (Operation op : orders.operations(orderId)) out.addAll(orders.materials(orderId, op.seq()));
+      return out;
+    });
   }
 
   /** Ordered by id. */
-  public synchronized List<MachineRecord> machines() {
-    return machineStore.machines();
+  public List<MachineRecord> machines() {
+    return locked(machineStore::machines);
   }
 
   /** The operation running on the machine, or null. */
-  public synchronized Operation runningOn(String machineId) {
-    for (Operation op : orders.operationsOnMachine(machineId)) if (op.status() == Operation.Status.RUNNING) return op;
-    return null;
+  public Operation runningOn(String machineId) {
+    return locked(() -> {
+      for (Operation op : orders.operationsOnMachine(machineId)) if (op.status() == Operation.Status.RUNNING) return op;
+      return null;
+    });
   }
 
-  public synchronized Kpis kpis(long fromMs, long toMs) {
-    return new Analytics(orders, machineStore, catalog).compute(fromMs, toMs);
+  public Kpis kpis(long fromMs, long toMs) {
+    return locked(() -> new Analytics(orders, machineStore, catalog).compute(fromMs, toMs));
   }
 
   // ---- machine commands: checked against the machine's state, carried out by the simulation -------------
 
-  public synchronized void startMachine(String machineId) {
-    faults.start(machineId);
+  public void startMachine(String machineId) {
+    locked(() -> { faults.start(machineId); return null; });
   }
 
-  public synchronized void stopMachine(String machineId) {
-    faults.stop(machineId);
+  public void stopMachine(String machineId) {
+    locked(() -> { faults.stop(machineId); return null; });
   }
 
   /** @param faultTypeId null lets the simulation pick a fault valid for the machine kind */
-  public synchronized void injectFault(String machineId, String faultTypeId) {
-    faults.injectFault(machineId, faultTypeId);
+  public void injectFault(String machineId, String faultTypeId) {
+    locked(() -> { faults.injectFault(machineId, faultTypeId); return null; });
   }
 
-  public synchronized void repairMachine(String machineId) {
-    faults.repair(machineId);
+  public void repairMachine(String machineId) {
+    locked(() -> { faults.repair(machineId); return null; });
   }
 
-  public synchronized void maintainMachine(String machineId) {
-    faults.maintain(machineId);
+  public void maintainMachine(String machineId) {
+    locked(() -> { faults.maintain(machineId); return null; });
   }
 
   private MachineStatus knownStatus(String machineId) {
@@ -182,45 +195,61 @@ public final class SmartFactory implements MachineFeedback {
 
   @Override
   public void faultRaised(String machineId, String faultTypeId, String label, boolean scrappedWorkpiece) {
-    inUnit(() -> { faults.faultRaised(machineId, faultTypeId, label, scrappedWorkpiece); flow.advance(); return null; });
+    inUnit(() -> { faults.faultRaised(machineId, faultTypeId, label, scrappedWorkpiece); moveOn(); return null; });
   }
 
   @Override
   public void jobFinished(String machineId, String orderId, int stepSeq, int good, int scrap) {
-    inUnit(() -> { flow.jobFinished(machineId, orderId, stepSeq, good, scrap); flow.advance(); return null; });
+    inUnit(() -> { flow.jobFinished(machineId, orderId, stepSeq, good, scrap); moveOn(); return null; });
   }
 
   @Override
   public void conveyorDelivered(String machineId, String orderId, int stepSeq, int quantity) {
-    inUnit(() -> { flow.conveyorDelivered(machineId, orderId, stepSeq, quantity); flow.advance(); return null; });
+    inUnit(() -> { flow.conveyorDelivered(machineId, orderId, stepSeq, quantity); moveOn(); return null; });
+  }
+
+  /** Production moved on: the plan follows, then ready operations start. */
+  private void moveOn() {
+    orderService.replan();
+    flow.advance();
   }
 
   /** Runs in the delivering bus's unit of work, so the processed marker and these writes commit together. */
-  private synchronized void consume(NexusEvent event) {
-    try {
-      if (event.type().equals(EventTypes.STOCK_CHANGED)) {
-        orderService.stockChanged(((Payloads.StockChanged) event.payload()).materialId());
-      } else if (event.type().equals(EventTypes.TRANSPORT_DELIVERED)) {
-        flow.delivered((Payloads.TransportDelivered) event.payload());
-      } else {
-        return;
+  private void consume(NexusEvent event) {
+    synchronized (lock) {
+      try {
+        if (event.type().equals(EventTypes.STOCK_CHANGED)) {
+          orderService.stockChanged(((Payloads.StockChanged) event.payload()).materialId());
+        } else if (event.type().equals(EventTypes.TRANSPORT_DELIVERED)) {
+          flow.delivered((Payloads.TransportDelivered) event.payload());
+        } else {
+          return;
+        }
+        moveOn();
+      } catch (RuntimeException | Error e) {
+        orderService.forgetPlan();
+        throw e;
       }
-      flow.advance();
-    } catch (RuntimeException | Error e) {
-      orderService.forgetPlan();
-      throw e;
     }
   }
 
-  private synchronized <T> T inUnit(Supplier<T> action) {
-    Object[] result = new Object[1];
-    try {
-      work.inNewTransaction(() -> result[0] = action.get());
-    } catch (RuntimeException | Error e) {
-      orderService.forgetPlan();
-      throw e;
+  private <T> T locked(Supplier<T> action) {
+    synchronized (lock) {
+      return action.get();
     }
-    @SuppressWarnings("unchecked") T t = (T) result[0];
-    return t;
+  }
+
+  private <T> T inUnit(Supplier<T> action) {
+    synchronized (lock) {
+      Object[] result = new Object[1];
+      try {
+        work.inNewTransaction(() -> result[0] = action.get());
+      } catch (RuntimeException | Error e) {
+        orderService.forgetPlan();
+        throw e;
+      }
+      @SuppressWarnings("unchecked") T t = (T) result[0];
+      return t;
+    }
   }
 }
