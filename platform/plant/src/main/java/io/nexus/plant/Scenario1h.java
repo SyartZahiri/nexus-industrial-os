@@ -18,8 +18,14 @@ public final class Scenario1h {
     return new PlantRules(d.machines(), false, d.autoOrderIntervalMs(), d.maxOpenOrders(), d.shipping(), d.dispatchRule());
   }
 
-  /** Runs the script on a freshly reset plant; returns one line per event, then the frame. */
+  /** Runs the script on an in-memory plant; returns one line per event, then the frame. */
   public static String run(Plant plant) {
+    play(plant);
+    return render(plant.events(), plant.frame());
+  }
+
+  /** Plays the hour on any plant; the server reads the events from its table and renders them itself. */
+  public static void play(Plant plant) {
     var sf = plant.smartFactory();
     for (String product : List.of("GH200", "AW50", "FP12", "MT7")) {
       sf.createOrder(new NewOrder(product, 4, Priority.NORMAL, 3 * 3_600_000L));
@@ -31,7 +37,6 @@ public final class Scenario1h {
     plant.advance(10 * 60_000);
     sf.createOrder(new NewOrder("MT7", 2, Priority.EILIG, 3_600_000));
     plant.advance(20 * 60_000);
-    return render(plant.events(), plant.frame());
   }
 
   /** The comparable text: events without their run-specific ids, then the frame. */
@@ -45,8 +50,8 @@ public final class Scenario1h {
   private static void attempt(Runnable command) {
     try {
       command.run();
-    } catch (RuntimeException refused) {
-      // deterministic: the same state refuses the same command on every runtime
+    } catch (io.nexus.contracts.DomainException | io.nexus.contracts.state.IllegalTransitionException refused) {
+      // deterministic: the same state refuses the same command on every runtime; anything else is a bug and fails
     }
   }
 }

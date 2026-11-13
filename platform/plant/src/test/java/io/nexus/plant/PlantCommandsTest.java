@@ -48,6 +48,44 @@ class PlantCommandsTest {
     assertThat(send("{\"command\":\"setDispatchRule\",\"rule\":\"EDD\"}")).containsEntry("ok", true);
   }
 
+  /** Numbers that do not fit are refused, never cut to something else. */
+  @Test
+  void numbersOutOfRangeAreRefused() {
+    assertThat(send("{\"command\":\"createOrder\",\"productId\":\"FP12\",\"quantity\":4294967301,\"priority\":\"NORMAL\",\"dueInMinutes\":60}"))
+        .containsEntry("status", 400L);
+    assertThat(send("{\"command\":\"createOrder\",\"productId\":\"FP12\",\"quantity\":3,\"priority\":\"NORMAL\",\"dueInMinutes\":9000000000000000}"))
+        .containsEntry("status", 400L);
+    assertThat(send("{\"command\":\"machineConfigure\",\"machineId\":\"CNC-01\",\"override\":4294967396,\"coolant\":true}"))
+        .containsEntry("status", 400L);
+    assertThat(send("{\"command\":\"setRules\",\"autoOrderIntervalMinutes\":9000000000000000}")).containsEntry("status", 400L);
+    assertThat(plant.smartFactory().orders()).isEmpty();
+  }
+
+  @Test
+  void deeplyNestedJsonIsRefusedNotThrown() {
+    assertThat(send("[".repeat(10_000))).containsEntry("status", 400L);
+  }
+
+  /** A refused command leaves the plant exactly as it was. */
+  @Test
+  void refusedCommandChangesNothing() {
+    plant.advance(60_000);
+    String before = PlantJson.frame(plant.frame());
+    int events = plant.events().size();
+    assertThat(send("{\"command\":\"machineRepair\",\"machineId\":\"CNC-01\"}")).containsEntry("status", 409L);
+    assertThat(send("{\"command\":\"createOrder\",\"productId\":\"NOPE\",\"quantity\":3,\"priority\":\"NORMAL\",\"dueInMinutes\":60}"))
+        .containsEntry("status", 404L);
+    assertThat(PlantJson.frame(plant.frame())).isEqualTo(before);
+    assertThat(plant.events()).hasSize(events);
+  }
+
+  @Test
+  void unexpectedErrorsNameTheirClassButNotTheirText() {
+    var answer = (Map<String, Object>) JsonReader.parse(PlantCommands.apply(null, "{\"command\":\"cancelOrder\",\"orderId\":\"PO-1\"}"));
+    assertThat(answer).containsEntry("status", 500L);
+    assertThat((String) answer.get("message")).contains("NullPointerException");
+  }
+
   @Test
   void errorsHaveTheServersStatusCodes() {
     assertThat(send("{\"command\":\"explode\"}")).containsEntry("status", 400L);

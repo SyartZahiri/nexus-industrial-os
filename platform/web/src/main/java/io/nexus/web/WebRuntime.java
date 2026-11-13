@@ -88,16 +88,19 @@ public final class WebRuntime {
 
   /** The worker holds exactly one plant per module instance. */
   private static Plant plant;
+  /** Run number of the current plant: event ids of a restarted plant never repeat those of the last one. */
+  private static long runs;
 
   /** Starts a fresh plant with the production rules. */
   @JSExport
   public static void plantStart(int seed) {
-    plant = Plant.inMemory(seed, PlantRules.DEFAULT);
+    plant = Plant.inMemory(seed, PlantRules.DEFAULT, ++runs);
   }
 
-  /** Runs whole simulation steps for at least simMs; returns the number of steps. */
+  /** Runs whole simulation steps for at least simMs; returns the number of steps, or -1 for an invalid duration. */
   @JSExport
   public static int plantAdvance(double simMs) {
+    if (Double.isNaN(simMs) || simMs < 0 || simMs > Plant.MAX_ADVANCE_MS) return -1;
     return running().advance((long) simMs);
   }
 

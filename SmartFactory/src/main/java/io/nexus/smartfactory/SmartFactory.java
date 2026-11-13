@@ -121,6 +121,16 @@ public final class SmartFactory implements MachineFeedback {
     return locked(orders::orders);
   }
 
+  /** Orders still in work, ordered by id. */
+  public List<ProductionOrder> openOrders() {
+    return locked(orders::open);
+  }
+
+  /** The n most recently created orders that are finished or cancelled, ordered by id. */
+  public List<ProductionOrder> lastFinished(int n) {
+    return locked(() -> orders.lastFinished(n));
+  }
+
   public List<Operation> operations(String orderId) {
     return locked(() -> orders.operations(orderId));
   }

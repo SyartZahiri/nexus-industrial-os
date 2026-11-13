@@ -88,9 +88,28 @@ public final class PlantJson {
     w.endObject();
   }
 
+  /** Names written into the JSON, not taken from the runtime's class metadata (a build could strip or rename it). */
   private static String simpleName(Payload p) {
-    String n = p.getClass().getName();
-    return n.substring(Math.max(n.lastIndexOf('.'), n.lastIndexOf('$')) + 1);
+    if (p instanceof Payloads.Note) return "Note";
+    if (p instanceof Payloads.Decision) return "Decision";
+    if (p instanceof Payloads.ConsumerFailed) return "ConsumerFailed";
+    if (p instanceof Payloads.OrderCreated) return "OrderCreated";
+    if (p instanceof Payloads.OrderStatusChanged) return "OrderStatusChanged";
+    if (p instanceof Payloads.OrderRescheduled) return "OrderRescheduled";
+    if (p instanceof Payloads.OperationChanged) return "OperationChanged";
+    if (p instanceof Payloads.MaterialReserved) return "MaterialReserved";
+    if (p instanceof Payloads.MaterialShortage) return "MaterialShortage";
+    if (p instanceof Payloads.StockChanged) return "StockChanged";
+    if (p instanceof Payloads.TransportCreated) return "TransportCreated";
+    if (p instanceof Payloads.TransportStateChanged) return "TransportStateChanged";
+    if (p instanceof Payloads.TransportDelivered) return "TransportDelivered";
+    if (p instanceof Payloads.AgvStateChanged) return "AgvStateChanged";
+    if (p instanceof Payloads.AgvFault) return "AgvFault";
+    if (p instanceof Payloads.RouteChanged) return "RouteChanged";
+    if (p instanceof Payloads.MachineStatusChanged) return "MachineStatusChanged";
+    if (p instanceof Payloads.MachineFault) return "MachineFault";
+    if (p instanceof Payloads.MaterialRequested) return "MaterialRequested";
+    throw new IllegalStateException("Nutzlast ohne JSON-Form");
   }
 
   private static void payload(JsonWriter w, Payload p) {
@@ -152,7 +171,7 @@ public final class PlantJson {
       w.name("machineId").value(x.machineId()).name("orderId").value(x.orderId()).name("materialId").value(x.materialId())
           .name("quantity").value(x.quantity());
     } else {
-      throw new IllegalStateException("Nutzlast ohne JSON-Form: " + simpleName(p));
+      throw new IllegalStateException("Nutzlast ohne JSON-Form");
     }
     w.endObject();
   }

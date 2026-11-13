@@ -1,6 +1,10 @@
 package io.nexus.plant;
 
+import io.nexus.contracts.Domain.Severity;
+import io.nexus.contracts.DomainException;
 import io.nexus.contracts.event.EventBus;
+import io.nexus.contracts.event.EventTypes;
+import io.nexus.contracts.event.Payloads;
 import io.nexus.contracts.event.EventIds;
 import io.nexus.contracts.event.NexusEvent;
 import io.nexus.contracts.memory.MemoryEventLog;
@@ -32,6 +36,8 @@ import java.util.List;
  */
 public final class Plant {
   public static final long STEP_MS = 100;
+  /** One call advances at most one simulated day; larger requests are refused instead of freezing the caller. */
+  public static final long MAX_ADVANCE_MS = 86_400_000;
 
   /** Drop and take positions on the collecting conveyor CV-03, from FactoryTwin/src/sim/initialState.ts. */
   private static final double CV03_LENGTH_M = 27;
@@ -49,10 +55,15 @@ public final class Plant {
 
   /** Everything in memory: the browser runtime and core tests. */
   public static Plant inMemory(long seed, PlantRules rules) {
+    return inMemory(seed, rules, 1);
+  }
+
+  /** @param runId run number in the event ids, so ids of a restarted plant never repeat those of the last one */
+  public static Plant inMemory(long seed, PlantRules rules, long runId) {
     var work = new MemoryUnitOfWork();
     var log = new MemoryEventLog(work);
     var time = new SimTime();
-    var eventIds = new EventIds(1);
+    var eventIds = new EventIds(runId);
     var bus = new EventBus(log, work, time, () -> eventIds);
     var ids = new MemoryIdSource(work);
     var random = new SeededRandom(seed);
@@ -104,22 +115,54 @@ public final class Plant {
     applyRules(rules);
   }
 
-  /** Runs whole steps of STEP_MS until at least simMs have passed; returns the number of steps. */
+  /** Runs whole steps of STEP_MS until at least simMs have passed (0 to MAX_ADVANCE_MS); returns the steps. */
   public int advance(long simMs) {
+    if (simMs < 0 || simMs > MAX_ADVANCE_MS) {
+      throw DomainException.invalid("Simulationszeit je Aufruf zwischen 0 und " + MAX_ADVANCE_MS + " ms");
+    }
     int steps = (int) ((simMs + STEP_MS - 1) / STEP_MS);
     for (int i = 0; i < steps; i++) step();
     return steps;
   }
 
+  /**
+   * One step. Each phase runs on its own: if one fails, it is reported as an error decision and the others still
+   * run, so the clock, the machines and the fleet never stop because of one fault in the code or the database.
+   */
   private void step() {
     synchronized (bus) {
       time.advance(STEP_MS);
       long now = time.nowMs();
-      orders.step(now, rules, smartFactory);
-      shipping.step(now, rules, flowPilot);
-      simulation.step(STEP_MS);
-      flowPilot.step(STEP_MS);
-      bus.retryFailed();
+      phase("Aufträge", () -> orders.step(now, rules, smartFactory));
+      phase("Versand", () -> shipping.step(now, rules, flowPilot));
+      phase("Maschinen", () -> simulation.step(STEP_MS));
+      phase("FlowPilot", () -> flowPilot.step(STEP_MS));
+      for (int i = 0; i < extraPhases.size(); i++) phase(extraPhaseNames.get(i), extraPhases.get(i));
+      phase("Zustellung", bus::retryFailed);
+    }
+  }
+
+  private final List<String> extraPhaseNames = new ArrayList<>();
+  private final List<Runnable> extraPhases = new ArrayList<>();
+
+  /** Tests only: a phase that runs after FlowPilot in every step. */
+  void addPhaseForTest(String name, Runnable phase) {
+    extraPhaseNames.add(name);
+    extraPhases.add(phase);
+  }
+
+  private void phase(String name, Runnable work) {
+    try {
+      work.run();
+    } catch (RuntimeException | StackOverflowError e) {
+      String type = e.getClass().getName();
+      String reason = "Phase " + name + " fehlgeschlagen: " + type.substring(type.lastIndexOf('.') + 1);
+      try {
+        bus.publish(EventTypes.DECISION, "plant", Severity.ERROR, null,
+            new Payloads.Decision("Simulationsschritt", name, List.of(), reason));
+      } catch (RuntimeException reportFailed) {
+        // nothing left to tell; the next step tries again
+      }
     }
   }
 
@@ -166,7 +209,9 @@ public final class Plant {
   }
 
   public long nowMs() {
-    return time.nowMs();
+    synchronized (bus) {
+      return time.nowMs();
+    }
   }
 
   /** Every event of the run, in publish order. Only for the in-memory plant; the server reads its event table. */
@@ -179,18 +224,16 @@ public final class Plant {
 
   public PlantFrame frame() {
     synchronized (bus) {
+      // every list sorted here in Java: a database may order text differently (collation), the frame must not
       List<PlantFrame.StockView> stock = new ArrayList<>();
       for (StockLine l : flowPilot.stock()) {
         stock.add(new PlantFrame.StockView(l.materialId(), l.locationId(), l.onHand(), l.reserved()));
       }
-      List<ProductionOrder> all = smartFactory.orders();
-      List<ProductionOrder> shown = new ArrayList<>();
-      List<ProductionOrder> finished = new ArrayList<>();
-      for (ProductionOrder o : all) {
-        if (o.status().terminal()) finished.add(o);
-        else shown.add(o);
-      }
-      shown.addAll(finished.subList(Math.max(0, finished.size() - 20), finished.size()));
+      stock.sort((a, b) -> a.materialId().equals(b.materialId())
+          ? a.locationId().compareTo(b.locationId()) : a.materialId().compareTo(b.materialId()));
+      // open orders and the 20 last finished ones, without loading every order the plant ever had
+      List<ProductionOrder> shown = new ArrayList<>(smartFactory.openOrders());
+      shown.addAll(smartFactory.lastFinished(20));
       shown.sort((a, b) -> a.id().compareTo(b.id()));
       List<PlantFrame.OrderView> orderViews = new ArrayList<>();
       for (ProductionOrder o : shown) {
@@ -207,8 +250,11 @@ public final class Plant {
         transports.add(new PlantFrame.TransportView(t.id(), t.kind().name(), t.orderId(), t.materialId(), t.quantity(),
             t.status().name(), t.agvId(), t.from().kind() + ":" + t.from().id(), t.to().kind() + ":" + t.to().id()));
       }
-      return new PlantFrame(time.nowMs(), simulation.machines(), simulation.conveyors(), flowPilot.vehicles(), stock,
-          orderViews, transports);
+      List<io.nexus.sim.Simulation.MachineView> machines = new ArrayList<>(simulation.machines());
+      machines.sort((a, b) -> a.id().compareTo(b.id()));
+      List<FlowPilot.VehicleView> vehicles = new ArrayList<>(flowPilot.vehicles());
+      vehicles.sort((a, b) -> a.id().compareTo(b.id()));
+      return new PlantFrame(time.nowMs(), machines, simulation.conveyors(), vehicles, stock, orderViews, transports);
     }
   }
 

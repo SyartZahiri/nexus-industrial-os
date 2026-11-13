@@ -139,6 +139,44 @@ class PlantEndToEndTest {
     assertThat(run(8)).isNotEqualTo(first);
   }
 
+  /** One failing phase must not stop the others or the clock: the server loop and the web worker keep running. */
+  @Test
+  void aFailingPhaseIsReportedAndTheStepGoesOn() {
+    int[] calls = {0};
+    plant.addPhaseForTest("kaputt", () -> {
+      calls[0]++;
+      throw new IllegalStateException("geheim");
+    });
+    String id = plant.smartFactory().createOrder(new NewOrder("FP12", 2, Priority.NORMAL, 3 * 3_600_000L));
+    advanceUntil(() -> order(id).status() == OrderStatus.COMPLETED, 2 * 3_600_000L, "order completes despite the phase");
+    assertThat(calls[0]).isGreaterThan(100);
+    assertThat(plant.events()).anySatisfy(e -> {
+      assertThat(e.type()).isEqualTo(EventTypes.DECISION);
+      assertThat(e.severity()).isEqualTo(io.nexus.contracts.Domain.Severity.ERROR);
+      assertThat(e.payload().toString()).contains("kaputt").contains("IllegalStateException").doesNotContain("geheim");
+    });
+  }
+
+  @Test
+  void advanceRejectsNegativeAndHugeDurations() {
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> plant.advance(-1))
+        .isInstanceOf(io.nexus.contracts.DomainException.class);
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> plant.advance(Plant.MAX_ADVANCE_MS + 1))
+        .isInstanceOf(io.nexus.contracts.DomainException.class);
+    assertThat(plant.advance(0)).isZero();
+    assertThat(plant.nowMs()).isZero();
+  }
+
+  /** The machines and SmartFactory never disagree about what a machine is doing. */
+  @Test
+  void simulationAndSmartFactoryAgreeOnEveryMachine() {
+    plant = Plant.inMemory(9, PlantRules.DEFAULT);
+    for (int i = 0; i < 3 * 36_000; i++) {
+      plant.advance(Plant.STEP_MS);
+      if (i % 10 == 0) PlantLongRunTest.checkMachinesAgree(plant);
+    }
+  }
+
   @Test
   void frameShowsTheWholePlant() {
     plant.smartFactory().createOrder(new NewOrder("GH200", 2, Priority.EILIG, 3_600_000));

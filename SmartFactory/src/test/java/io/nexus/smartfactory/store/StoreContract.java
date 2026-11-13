@@ -60,6 +60,17 @@ public abstract class StoreContract {
   }
 
   @Test
+  void lastFinishedAreTheFinishedOrdersWithTheHighestIdsInIdOrder() {
+    insert("PO-0001", OrderStatus.COMPLETED);
+    insert("PO-0002", OrderStatus.CANCELLED);
+    insert("PO-0003", OrderStatus.IN_PROGRESS);
+    insert("PO-0004", OrderStatus.COMPLETED);
+    assertThat(orders().lastFinished(2)).extracting(ProductionOrder::id).containsExactly("PO-0002", "PO-0004");
+    assertThat(orders().lastFinished(10)).extracting(ProductionOrder::id).containsExactly("PO-0001", "PO-0002", "PO-0004");
+    assertThat(orders().lastFinished(0)).isEmpty();
+  }
+
+  @Test
   void ordersAreSortedByIdAndOpenLeavesOutFinishedOnes() {
     insert("PO-0003", OrderStatus.IN_PROGRESS);
     insert("PO-0001", OrderStatus.COMPLETED);

@@ -28,6 +28,7 @@ class PlantLongRunTest {
       plant.advance(Plant.STEP_MS);
       checkFleet(plant.flowPilot().vehicles(), plant.flowPilot().openTransports());
       checkStock(plant.flowPilot().stock());
+      checkMachinesAgree(plant);
       if (t % 10_000 == 0) {
         for (ProductionOrder o : plant.smartFactory().orders()) {
           if (o.status().terminal()) continue;
@@ -67,6 +68,20 @@ class PlantLongRunTest {
         assertThat(ahead > 0 && ahead < SAFETY_DISTANCE - 0.05 && side < 0.6)
             .as(a.id() + " too close to " + b.id() + " (" + ahead + " m)").isFalse();
       }
+    }
+  }
+
+  /**
+   * The simulation and SmartFactory agree on each machine: the same status, and an operation is RUNNING there
+   * exactly when the machine holds that order's batch (also while paused by a fault or a stop).
+   */
+  static void checkMachinesAgree(Plant plant) {
+    var records = plant.smartFactory().machines();
+    for (var m : plant.simulation().machines()) {
+      var record = records.stream().filter(r -> r.id().equals(m.id())).findFirst().orElseThrow();
+      assertThat(record.status()).as(m.id() + " status at " + plant.nowMs()).isEqualTo(m.status());
+      var running = plant.smartFactory().runningOn(m.id());
+      assertThat(running == null ? null : running.orderId()).as(m.id() + " batch at " + plant.nowMs()).isEqualTo(m.orderId());
     }
   }
 

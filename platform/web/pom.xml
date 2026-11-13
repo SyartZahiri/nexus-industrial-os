@@ -11,6 +11,15 @@
     <skipTests>false</skipTests>
   </properties>
 
+  <!-- -Dmaven.test.skip skips the Node comparisons too (they need the JVM output the tests write) -->
+  <profiles>
+    <profile>
+      <id>no-tests</id>
+      <activation><property><name>maven.test.skip</name><value>true</value></property></activation>
+      <properties><skipTests>true</skipTests></properties>
+    </profile>
+  </profiles>
+
   <dependencies>
     <dependency><groupId>io.nexus</groupId><artifactId>nexus-contracts</artifactId></dependency>
     <!-- every core module is compiled to JavaScript; each adds a JSExport self-test as its first task -->

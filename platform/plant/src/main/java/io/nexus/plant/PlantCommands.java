@@ -36,8 +36,10 @@ public final class PlantCommands {
       return error(status, e.getMessage());
     } catch (IllegalTransitionException e) {
       return error(409, e.getMessage());
-    } catch (RuntimeException e) {
-      return error(500, "Interner Fehler");
+    } catch (RuntimeException | StackOverflowError e) {
+      // the class tells a developer where to look; the message may hold internals and stays out
+      String type = e.getClass().getName();
+      return error(500, "Interner Fehler (" + type.substring(type.lastIndexOf('.') + 1) + ")");
     }
   }
 
@@ -46,14 +48,14 @@ public final class PlantCommands {
     var fp = plant.flowPilot();
     switch (command) {
       case "createOrder" -> {
-        String id = sf.createOrder(new NewOrder(text(c, "productId"), (int) number(c, "quantity"),
-            Priority.valueOf(choice(c, "priority", "NORMAL", "HOCH", "EILIG")), number(c, "dueInMinutes") * 60_000));
+        String id = sf.createOrder(new NewOrder(text(c, "productId"), whole(c, "quantity"),
+            Priority.valueOf(choice(c, "priority", "NORMAL", "HOCH", "EILIG")), minutes(c, "dueInMinutes")));
         return new JsonWriter().beginObject().name("id").value(id).endObject().toString();
       }
       case "changeOrder" -> sf.changeOrder(text(c, "orderId"), new OrderChange(
           c.get("priority") == null ? null : Priority.valueOf(choice(c, "priority", "NORMAL", "HOCH", "EILIG")),
-          c.get("quantity") == null ? null : (int) number(c, "quantity"),
-          c.get("dueInMinutes") == null ? null : number(c, "dueInMinutes") * 60_000));
+          c.get("quantity") == null ? null : whole(c, "quantity"),
+          c.get("dueInMinutes") == null ? null : minutes(c, "dueInMinutes")));
       case "cancelOrder" -> sf.cancelOrder(text(c, "orderId"));
       case "setDispatchRule" -> {
         PlantRules r = plant.rules();
@@ -65,7 +67,7 @@ public final class PlantCommands {
       case "machineFault" -> sf.injectFault(text(c, "machineId"), optionalText(c, "faultTypeId"));
       case "machineRepair" -> sf.repairMachine(text(c, "machineId"));
       case "machineMaintain" -> sf.maintainMachine(text(c, "machineId"));
-      case "machineConfigure" -> plant.configureMachine(text(c, "machineId"), (int) number(c, "override"),
+      case "machineConfigure" -> plant.configureMachine(text(c, "machineId"), whole(c, "override"),
           bool(c, "coolant"));
       case "agvEnable" -> fp.setAgvEnabled(text(c, "agvId"), true);
       case "agvDisable" -> fp.setAgvEnabled(text(c, "agvId"), false);
@@ -73,7 +75,7 @@ public final class PlantCommands {
       case "agvFault" -> fp.injectFault(text(c, "agvId"), optionalText(c, "faultTypeId"));
       case "edgeBlock" -> fp.setEdgeBlocked(text(c, "edgeId"), true);
       case "edgeUnblock" -> fp.setEdgeBlocked(text(c, "edgeId"), false);
-      case "stockReceipt" -> fp.receive(text(c, "materialId"), text(c, "locationId"), (int) number(c, "quantity"));
+      case "stockReceipt" -> fp.receive(text(c, "materialId"), text(c, "locationId"), whole(c, "quantity"));
       case "setRules" -> plant.setRules(rules(plant.rules(), c));
       default -> throw DomainException.invalid("Unbekannter Befehl: " + command);
     }
@@ -90,8 +92,8 @@ public final class PlantCommands {
         c.containsKey("maintenanceThreshold") ? decimal(c, "maintenanceThreshold") : m.maintenanceThreshold());
     return new PlantRules(machines,
         c.containsKey("autoOrders") ? bool(c, "autoOrders") : r.autoOrders(),
-        c.containsKey("autoOrderIntervalMinutes") ? number(c, "autoOrderIntervalMinutes") * 60_000 : r.autoOrderIntervalMs(),
-        c.containsKey("maxOpenOrders") ? (int) number(c, "maxOpenOrders") : r.maxOpenOrders(),
+        c.containsKey("autoOrderIntervalMinutes") ? minutes(c, "autoOrderIntervalMinutes") : r.autoOrderIntervalMs(),
+        c.containsKey("maxOpenOrders") ? whole(c, "maxOpenOrders") : r.maxOpenOrders(),
         c.containsKey("shipping") ? bool(c, "shipping") : r.shipping(),
         c.containsKey("dispatchRule")
             ? DispatchRule.valueOf(choice(c, "dispatchRule", "PRIORITY", "EDD", "FIFO", "SPT")) : r.dispatchRule());
@@ -117,6 +119,20 @@ public final class PlantCommands {
   private static long number(Map<String, Object> c, String field) {
     if (!(c.get(field) instanceof Long n)) throw DomainException.invalid("Feld " + field + " muss eine ganze Zahl sein");
     return n;
+  }
+
+  /** A whole number that fits an int; anything larger is refused, never cut to another value. */
+  private static int whole(Map<String, Object> c, String field) {
+    long n = number(c, field);
+    if (n < Integer.MIN_VALUE || n > Integer.MAX_VALUE) throw DomainException.invalid("Feld " + field + " ist zu gross");
+    return (int) n;
+  }
+
+  /** Minutes as milliseconds, at most one year. */
+  private static long minutes(Map<String, Object> c, String field) {
+    long n = number(c, field);
+    if (n < 0 || n > 525_600) throw DomainException.invalid("Feld " + field + " muss zwischen 0 und 525600 Minuten liegen");
+    return n * 60_000;
   }
 
   private static double decimal(Map<String, Object> c, String field) {

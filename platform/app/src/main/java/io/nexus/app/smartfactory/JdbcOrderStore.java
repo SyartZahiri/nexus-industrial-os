@@ -81,6 +81,14 @@ class JdbcOrderStore implements OrderStore {
   }
 
   @Override
+  public List<ProductionOrder> lastFinished(int n) {
+    List<ProductionOrder> newestFirst = jdbc.sql(ORDER
+            + " where status in ('COMPLETED', 'CANCELLED') order by id collate \"C\" desc limit :n")
+        .param("n", n).query(JdbcOrderStore::order).list();
+    return newestFirst.reversed();
+  }
+
+  @Override
   public List<Operation> operations(String orderId) {
     return jdbc.sql(OPERATION + " where order_id = :o order by seq").param("o", orderId)
         .query(JdbcOrderStore::operation).list();

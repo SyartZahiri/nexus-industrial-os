@@ -67,6 +67,12 @@ public final class MemoryOrderStore implements OrderStore {
   }
 
   @Override
+  public List<ProductionOrder> lastFinished(int n) {
+    List<ProductionOrder> finished = orders.values().stream().filter(o -> o.status().terminal()).toList();
+    return List.copyOf(finished.subList(Math.max(0, finished.size() - n), finished.size()));
+  }
+
+  @Override
   public List<ProductionOrder> open() {
     return orders.values().stream().filter(o -> !o.status().terminal()).toList();
   }
