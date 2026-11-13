@@ -84,6 +84,12 @@ class FlowPilotController {
     flowPilot.receive(r.materialId(), r.locationId(), r.quantity());
   }
 
+  @PostMapping("/stock/issues")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  void issue(@Valid @RequestBody Receipt r) {
+    flowPilot.issue(r.materialId(), r.locationId(), r.quantity());
+  }
+
   @GetMapping("/transports")
   List<TransportOrder> transports(@RequestParam(required = false) TransportStatus status) {
     List<TransportOrder> all = transports.all();

@@ -52,6 +52,11 @@ public final class SmartFactory implements MachineFeedback {
   public static final String CONSUMER = "smartfactory";
 
   private final Object lock;
+  /** Commands of this facade currently running on the (single) thread holding the lock. */
+  private int commandDepth;
+  /** Materials whose stock changed while a command was running, in arrival order. */
+  private final java.util.LinkedHashSet<String> deferredStock = new java.util.LinkedHashSet<>();
+  private boolean deferredMoveOn;
   private final OrderStore orders;
   private final MachineStore machineStore;
   private final UnitOfWork work;
@@ -114,6 +119,16 @@ public final class SmartFactory implements MachineFeedback {
 
   public List<ProductionOrder> orders() {
     return locked(orders::orders);
+  }
+
+  /** Orders still in work, ordered by id. */
+  public List<ProductionOrder> openOrders() {
+    return locked(orders::open);
+  }
+
+  /** The n most recently created orders that are finished or cancelled, ordered by id. */
+  public List<ProductionOrder> lastFinished(int n) {
+    return locked(() -> orders.lastFinished(n));
   }
 
   public List<Operation> operations(String orderId) {
@@ -214,9 +229,27 @@ public final class SmartFactory implements MachineFeedback {
     flow.advance();
   }
 
-  /** Runs in the delivering bus's unit of work, so the processed marker and these writes commit together. */
+  /**
+   * Runs in the delivering bus's unit of work, so the processed marker and these writes commit together.
+   *
+   * <p>An event can arrive while SmartFactory is in the middle of one of its own commands: FlowPilot's reservation
+   * commits in a unit of its own and its stock.changed is delivered at once, before the command has created the
+   * operation's containers. Reacting then would see a half-built order (an operation without containers counts as
+   * supplied). Such a re-entrant event only records what it needs; the command finishes the follow-up work itself.
+   */
   private void consume(NexusEvent event) {
     synchronized (lock) {
+      if (commandDepth > 0) {
+        if (event.type().equals(EventTypes.STOCK_CHANGED)) {
+          deferredStock.add(((Payloads.StockChanged) event.payload()).materialId());
+        } else if (event.type().equals(EventTypes.TRANSPORT_DELIVERED)) {
+          flow.delivered((Payloads.TransportDelivered) event.payload());
+          deferredMoveOn = true;
+        }
+        return;
+      }
+      // handling an event is SmartFactory's own work too: events its reactions cause wait until it is done
+      commandDepth++;
       try {
         if (event.type().equals(EventTypes.STOCK_CHANGED)) {
           orderService.stockChanged(((Payloads.StockChanged) event.payload()).materialId());
@@ -226,9 +259,54 @@ public final class SmartFactory implements MachineFeedback {
           return;
         }
         moveOn();
+        drainDeferred();
       } catch (RuntimeException | Error e) {
+        clearDeferred();
         orderService.forgetPlan();
         throw e;
+      } finally {
+        commandDepth--;
+      }
+    }
+    drainAfterUnits();
+  }
+
+  /** Follow-up of events that arrived during SmartFactory's own work, in the current unit of work. */
+  private void drainDeferred() {
+    while (!deferredStock.isEmpty()) {
+      String materialId = deferredStock.iterator().next();
+      deferredStock.remove(materialId);
+      orderService.stockChanged(materialId);
+      moveOn();
+    }
+    if (deferredMoveOn) {
+      deferredMoveOn = false;
+      moveOn();
+    }
+  }
+
+  private void clearDeferred() {
+    deferredStock.clear();
+    deferredMoveOn = false;
+  }
+
+  /**
+   * Events can still arrive after a unit has committed, while its after-commit work runs (event delivery, job
+   * hand-over). Once SmartFactory is idle again, their follow-up runs in units of its own.
+   */
+  private void drainAfterUnits() {
+    synchronized (lock) {
+      while (commandDepth == 0 && (!deferredStock.isEmpty() || deferredMoveOn)) {
+        commandDepth++;
+        try {
+          work.inNewTransaction(this::drainDeferred);
+        } catch (RuntimeException | Error e) {
+          clearDeferred();
+          orderService.forgetPlan();
+          throw e;
+        } finally {
+          commandDepth--;
+        }
       }
     }
   }
@@ -242,12 +320,20 @@ public final class SmartFactory implements MachineFeedback {
   private <T> T inUnit(Supplier<T> action) {
     synchronized (lock) {
       Object[] result = new Object[1];
+      commandDepth++;
       try {
-        work.inNewTransaction(() -> result[0] = action.get());
+        work.inNewTransaction(() -> {
+          result[0] = action.get();
+          drainDeferred();          // events that arrived during the command, in the command's own unit
+        });
       } catch (RuntimeException | Error e) {
+        clearDeferred();
         orderService.forgetPlan();
         throw e;
+      } finally {
+        commandDepth--;
       }
+      drainAfterUnits();
       @SuppressWarnings("unchecked") T t = (T) result[0];
       return t;
     }

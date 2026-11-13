@@ -92,6 +92,17 @@ class FlowPilotApiTest {
   }
 
   @Test
+  void issueIsBookedAndValidated() throws Exception {
+    assertThat(post("/api/v1/stock/issues", "{\"materialId\":\"FG-FP12\",\"locationId\":\"FG-A\",\"quantity\":3}")
+        .statusCode()).isEqualTo(204);
+    assertThat(get("/api/v1/stock").body()).contains("{\"materialId\":\"FG-FP12\",\"locationId\":\"FG-A\",\"onHand\":5");
+    assertThat(post("/api/v1/stock/issues", "{\"materialId\":\"FG-FP12\",\"locationId\":\"FG-A\",\"quantity\":0}")
+        .statusCode()).isEqualTo(400);
+    assertThat(post("/api/v1/stock/issues", "{\"materialId\":\"FG-FP12\",\"locationId\":\"FG-A\",\"quantity\":99}")
+        .statusCode()).isEqualTo(409);
+  }
+
+  @Test
   void transportsAreListedAndFilteredByStatus() throws Exception {
     String id = transports.requestTransport(new TransportRequest("API-TR-1", TransportKind.WIP, "PO-API-2", null, 1,
         Place.machineOut("CNC-01"), Place.machineIn("CNC-02"), Priority.NORMAL, null));

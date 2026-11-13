@@ -18,6 +18,9 @@ public interface OrderStore {
   /** Not COMPLETED or CANCELLED, ordered by id. */
   List<ProductionOrder> open();
 
+  /** The n COMPLETED or CANCELLED orders with the highest ids, ordered by id. */
+  List<ProductionOrder> lastFinished(int n);
+
   /** Ordered by seq. */
   List<Operation> operations(String orderId);
 

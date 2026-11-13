@@ -11,12 +11,22 @@
     <skipTests>false</skipTests>
   </properties>
 
+  <!-- -Dmaven.test.skip skips the Node comparisons too (they need the JVM output the tests write) -->
+  <profiles>
+    <profile>
+      <id>no-tests</id>
+      <activation><property><name>maven.test.skip</name><value>true</value></property></activation>
+      <properties><skipTests>true</skipTests></properties>
+    </profile>
+  </profiles>
+
   <dependencies>
     <dependency><groupId>io.nexus</groupId><artifactId>nexus-contracts</artifactId></dependency>
     <!-- every core module is compiled to JavaScript; each adds a JSExport self-test as its first task -->
     <dependency><groupId>io.nexus</groupId><artifactId>nexus-sim</artifactId></dependency>
     <dependency><groupId>io.nexus</groupId><artifactId>flowpilot</artifactId></dependency>
     <dependency><groupId>io.nexus</groupId><artifactId>smartfactory</artifactId></dependency>
+    <dependency><groupId>io.nexus</groupId><artifactId>nexus-plant</artifactId></dependency>
     <dependency><groupId>org.teavm</groupId><artifactId>teavm-classlib</artifactId><version>${teavm.version}</version><scope>provided</scope></dependency>
     <dependency><groupId>org.teavm</groupId><artifactId>teavm-jso-apis</artifactId><version>${teavm.version}</version><scope>provided</scope></dependency>
     <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
@@ -57,6 +67,20 @@
                 <argument>${project.basedir}/src/test/js/smoke.mjs</argument>
                 <argument>${project.build.directory}/javascript/nexus-core.js</argument>
                 <argument>${project.build.directory}/selftest-jvm.txt</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>plant-js-equals-jvm</id>
+            <goals><goal>exec</goal></goals>
+            <phase>verify</phase>
+            <configuration>
+              <skip>${skipTests}</skip>
+              <executable>node</executable>
+              <arguments>
+                <argument>${project.basedir}/src/test/js/plant-run.mjs</argument>
+                <argument>${project.build.directory}/javascript/nexus-core.js</argument>
+                <argument>${project.build.directory}/plant-jvm.txt</argument>
               </arguments>
             </configuration>
           </execution>

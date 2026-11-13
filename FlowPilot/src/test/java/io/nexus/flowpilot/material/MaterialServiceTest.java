@@ -49,6 +49,24 @@ class MaterialServiceTest {
   }
 
   @Test
+  void issueTakesOnlyUnreservedStock() {
+    materials.reserve(request("REQ-1", new Line("RM-FP12", 10)));
+    materials.issue("RM-FP12", "RAW-A", 20);
+    assertThat(line("RM-FP12", "RAW-A")).isEqualTo(new StockLine("RM-FP12", "RAW-A", 10, 10));
+    assertThat(types()).endsWith("stock.changed");
+  }
+
+  @Test
+  void issueOfMoreThanAvailableIsAConflict() {
+    materials.reserve(request("REQ-1", new Line("RM-FP12", 10)));
+    assertThatThrownBy(() -> materials.issue("RM-FP12", "RAW-A", 21)).isInstanceOf(DomainException.class)
+        .extracting(e -> ((DomainException) e).kind()).isEqualTo(DomainException.Kind.CONFLICT);
+    assertThatThrownBy(() -> materials.issue("RM-FP12", "RAW-A", 0)).isInstanceOf(DomainException.class)
+        .extracting(e -> ((DomainException) e).kind()).isEqualTo(DomainException.Kind.INVALID);
+    assertThat(line("RM-FP12", "RAW-A")).isEqualTo(new StockLine("RM-FP12", "RAW-A", 30, 10));
+  }
+
+  @Test
   void reservesAllLinesOrNothing() {
     var result = materials.reserve(request("REQ-1", new Line("RM-GH200", 5), new Line("KIT-GH200", 25)));
     assertThat(result).isEqualTo(new Shortage("KIT-GH200", 25, 24));
