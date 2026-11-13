@@ -78,8 +78,13 @@ final class MachineSim {
     resume();
   }
 
+  /** Stops a machine that is working or idle; a fault, repair or maintenance runs to its end first. */
   void stop() {
     if (status == MachineStatus.STOPPED) return;
+    if (status != MachineStatus.IDLE && status != MachineStatus.SETUP && status != MachineStatus.RUNNING
+        && status != MachineStatus.BLOCKED) {
+      throw new IllegalTransitionException(id, status, MachineStatus.STOPPED);
+    }
     setStatus(MachineStatus.STOPPED);
   }
 
@@ -219,7 +224,8 @@ final class MachineSim {
 
   private void raise(FaultType type) {
     boolean scrapped = type.scrapsWorkpiece() && job != null;
-    resumeStopped = status == MachineStatus.STOPPED;
+    // a machine the operator stopped stays stopped, also when the fault interrupts its maintenance
+    resumeStopped = status == MachineStatus.STOPPED || (status == MachineStatus.MAINTENANCE && resumeStopped);
     maintenanceLeftS = 0;
     fault = type;
     repairDelayS = random.range(15, 35);

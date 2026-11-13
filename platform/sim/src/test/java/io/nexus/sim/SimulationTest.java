@@ -154,6 +154,54 @@ class SimulationTest {
   }
 
   @Test
+  void faultDuringSetupResumesTheSetupWhereItStopped() {
+    var s = sim(1, QUIET);
+    s.startJob(job("CNC-01", 60_000, 100_000));
+    run(s, 30_000);
+    s.injectFault("CNC-01", "SERVO");
+    assertThat(feedback.has("30000 status CNC-01 SETUP>FAULT")).isTrue();
+    runUntil(s, "finished CNC-01", 3_600_000);
+    long downtime = feedback.timeOf("REPAIR>SETUP") - 30_000;
+    assertThat(feedback.timeOf("finished CNC-01")).isEqualTo(160_000 + downtime);
+  }
+
+  @Test
+  void scrappingFaultDuringSetupLosesTheBatch() {
+    var s = sim(1, QUIET);
+    s.startJob(job("CNC-01", 60_000, 100_000));
+    run(s, 30_000);
+    s.injectFault("CNC-01", "TOOL");
+    assertThat(feedback.has("30000 fault CNC-01 TOOL true")).isTrue();
+    run(s, 1_800_000);
+    assertThat(feedback.has("finished CNC-01")).isFalse();
+    assertThat(view(s, "CNC-01").status()).isEqualTo(MachineStatus.IDLE);
+  }
+
+  /** A stop must not cut a repair or maintenance short: the operator stops a machine that is working or idle. */
+  @Test
+  void stopIsRejectedDuringFaultRepairAndMaintenance() {
+    var s = sim(1, QUIET);
+    s.injectFault("CNC-01", "COMM");
+    assertThatThrownBy(() -> s.stop("CNC-01")).isInstanceOf(IllegalTransitionException.class);
+    s.repair("CNC-01");
+    assertThatThrownBy(() -> s.stop("CNC-01")).isInstanceOf(IllegalTransitionException.class);
+    s.maintain("ROB-01");
+    assertThatThrownBy(() -> s.stop("ROB-01")).isInstanceOf(IllegalTransitionException.class);
+    assertThat(view(s, "CNC-01").status()).isEqualTo(MachineStatus.REPAIR);
+    assertThat(view(s, "ROB-01").status()).isEqualTo(MachineStatus.MAINTENANCE);
+  }
+
+  @Test
+  void faultDuringMaintenanceOfAStoppedMachineKeepsItStopped() {
+    var s = sim(1, QUIET);
+    s.stop("CNC-01");
+    s.maintain("CNC-01");
+    s.injectFault("CNC-01", "COMM");
+    runUntil(s, "REPAIR>STOPPED", 600_000);
+    assertThat(view(s, "CNC-01").status()).isEqualTo(MachineStatus.STOPPED);
+  }
+
+  @Test
   void thermalProtectionTripsWithoutCoolantAtHighOverride() {
     var s = sim(1, QUIET);
     s.configure("CNC-01", 130, false);
