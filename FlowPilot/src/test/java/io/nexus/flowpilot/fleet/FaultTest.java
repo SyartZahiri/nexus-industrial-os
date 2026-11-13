@@ -77,6 +77,38 @@ class FaultTest {
     assertThat(f.stock.lockMaterial("RM-GH200").get(0)).isEqualTo(new StockLine("RM-GH200", "RAW-A", 25, 0));
   }
 
+  /**
+   * Found with seed 42: the failed AGV stopped just past the corner into a dock spur; the replacement drove up to
+   * the corner node, 0.7 m behind it. A replacement stops at the following distance.
+   */
+  @Test
+  void replacementStopsAtTheFollowingDistanceAroundACorner() {
+    var f = new FleetFixture();
+    String id = f.supply("RM-GH200", "CNC-01", 5, Priority.NORMAL);
+    String agv = null;
+    while (agv == null || !f.vehicle(agv).route().equals(List.of("D_CNC01"))
+        || f.vehicle(agv).x() < -12.2) { // at least 0.7 m into the spur: beside the diagonal, out of its lane
+      f.step();
+      agv = f.transport(id).agvId();
+      if (f.time.nowMs() > 300_000) throw new AssertionError("never reached the spur");
+    }
+    f.fp.injectFault(agv, null); // just past D_CNC01_1, on the spur to D_CNC01
+    String failed = agv;
+    var holder = f.vehicle(failed);
+    double[] closest = {Double.POSITIVE_INFINITY};
+    f.runUntil(() -> {
+      for (var v : f.fp.vehicles()) {
+        if (v.id().equals(failed) || !id.equals(v.transportId())) continue;
+        if (v.status() != AgvStatus.TO_PICKUP && v.status() != AgvStatus.LOADING) continue; // approach and pickup
+        double dx = v.x() - holder.x(), dz = v.z() - holder.z();
+        closest[0] = Math.min(closest[0], Math.sqrt(dx * dx + dz * dz));
+      }
+      return f.vehicle(failed).status() != AgvStatus.FAULT;
+    }, 70);
+    assertThat(closest[0]).isGreaterThanOrEqualTo(AgvPhysics.SAFETY_DISTANCE - 0.05);
+    f.runUntil(() -> f.transport(id).status() == TransportStatus.DELIVERED, 300);
+  }
+
   @Test
   void failureDuringLoadingAfterConsumptionDoesNotConsumeTwice() {
     var f = new FleetFixture();
@@ -126,6 +158,31 @@ class FaultTest {
     assertThat(f.vehicle(failed).transportId()).isEqualTo(id);
     f.runUntil(() -> f.transport(id).status() == TransportStatus.DELIVERED, 300);
     assertThat(f.stock.lockMaterial("RM-GH200").get(0).onHand()).isEqualTo(25);
+  }
+
+  /**
+   * Repaired before its replacement arrives, the failed AGV continues with its load and the replacement is
+   * released. Found with seed 8: a repaired AGV that waited for its replacement blocked the raw store for good.
+   */
+  @Test
+  void repairBeforeTheReplacementArrivesReleasesIt() {
+    var f = new FleetFixture();
+    String id = f.supply("RM-GH200", "CNC-01", 5, Priority.NORMAL);
+    f.runUntil(() -> f.transport(id).status() == TransportStatus.IN_TRANSIT, 120);
+    f.run(2);
+    String failed = f.transport(id).agvId();
+    f.fp.injectFault(failed, null);
+    f.step();
+    String rescuer = f.transport(id).agvId();
+    // keep the replacement from arriving: it waits at a blocked edge right where it starts
+    for (var e : FlowPilotMasterData.edges()) {
+      if (e.from().equals(f.vehicle(rescuer).route().get(0))) f.fp.setEdgeBlocked(e.id(), true);
+    }
+    f.runUntil(() -> f.vehicle(failed).status() != AgvStatus.FAULT, 70);
+    f.step();
+    assertThat(f.transport(id).agvId()).isEqualTo(failed);
+    assertThat(f.vehicle(rescuer).transportId()).isNull();
+    assertThat(f.vehicle(rescuer).status()).isNotEqualTo(AgvStatus.TO_PICKUP);
   }
 
   /** A transport whose shortest route passes a node with a failed AGV, and a detour that avoids it. */

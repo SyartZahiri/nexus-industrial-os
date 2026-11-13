@@ -28,6 +28,11 @@ final class Vehicle {
   final List<String> route = new ArrayList<>();
   /** Node the current route leads to; null when the vehicle has nowhere to go. */
   String goal;
+  /**
+   * No route to the goal: the vehicle waits where it is. Its route then only holds the node ahead, so a new route
+   * starts there and never runs back against the edge it stands on.
+   */
+  boolean holding;
   /** Remaining loading or unloading time. */
   long timerMs;
   String chargerId;

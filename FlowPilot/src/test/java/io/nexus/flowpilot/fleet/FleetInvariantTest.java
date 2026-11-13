@@ -58,11 +58,13 @@ class FleetInvariantTest {
     }
   }
 
-  @Test
-  void longRunKeepsDistanceAndConservesMaterial() {
+  /** Seed 7 as in the plan; seed 1 found a vehicle repaired on an edge that later drove back against it. */
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(longs = {7, 1})
+  void longRunKeepsDistanceAndConservesMaterial(long seed) {
     var f = new FleetFixture();
-    var random = new SeededRandom(7).fork("orders");
-    var disturbances = new SeededRandom(7).fork("disturbances");
+    var random = new SeededRandom(seed).fork("orders");
+    var disturbances = new SeededRandom(seed).fork("disturbances");
     Map<String, Integer> lastOnHand = new HashMap<>();
     Map<String, Integer> replenished = new HashMap<>();
     for (var s : FlowPilotMasterData.initialStock()) lastOnHand.put(s.materialId() + "@" + s.locationId(), s.onHand());
@@ -89,6 +91,29 @@ class FleetInvariantTest {
     checkMaterial(f, replenished);
     long delivered = f.transports.all().stream().filter(t -> t.status() == TransportStatus.DELIVERED).count();
     assertThat(created).isGreaterThan(200);
+    assertThat(delivered).as("delivered of " + created).isGreaterThanOrEqualTo((long) Math.ceil(created * 0.9));
+  }
+
+  /** Review I4, found with other seeds: traffic only between machines, where dock spurs fill up. */
+  @Test
+  void machineToMachineTrafficKeepsDistance() {
+    var f = new FleetFixture();
+    var random = new SeededRandom(7).fork("wip");
+    int created = 0;
+    for (int step = 0; f.time.nowMs() < 3600 * 1000; step++) {
+      if (step % 150 == 0) {
+        String from = CNC[random.nextInt(4)], to = CNC[random.nextInt(4)];
+        if (!from.equals(to)) {
+          f.fp.transports().requestTransport(new TransportRequest("WIP-" + step, TransportKind.WIP, "PO-W" + step,
+              null, 1, Place.machineOut(from), Place.machineIn(to), Priority.NORMAL, null));
+          created++;
+        }
+      }
+      f.step();
+      checkDistances(f.fp.vehicles());
+      checkTransports(f);
+    }
+    long delivered = f.transports.all().stream().filter(t -> t.status() == TransportStatus.DELIVERED).count();
     assertThat(delivered).as("delivered of " + created).isGreaterThanOrEqualTo((long) Math.ceil(created * 0.9));
   }
 
@@ -123,7 +148,9 @@ class FleetInvariantTest {
 
   static void checkDistances(List<VehicleView> vehicles) {
     for (VehicleView v : vehicles) {
-      if (v.speed() <= 0) continue;
+      // every vehicle on its way counts, also one standing at a junction (review I4)
+      if (v.status() != io.nexus.contracts.state.AgvStatus.TO_PICKUP && v.status() != io.nexus.contracts.state.AgvStatus.TO_DROP
+          && v.status() != io.nexus.contracts.state.AgvStatus.TO_CHARGE) continue;
       double hx = Math.sin(v.heading()), hz = Math.cos(v.heading());
       for (VehicleView o : vehicles) {
         if (o == v) continue;
@@ -131,7 +158,8 @@ class FleetInvariantTest {
         double ahead = dx * hx + dz * hz;
         double side = Math.abs(-dx * hz + dz * hx);
         assertThat(ahead > 0 && ahead < AgvPhysics.SAFETY_DISTANCE - 0.05 && side < 0.6)
-            .as(v.id() + " drives with " + o.id() + " " + ahead + " m ahead").isFalse();
+            .as(v.id() + " " + v.status() + " at " + v.x() + "," + v.z() + " speed " + v.speed() + " route " + v.route()
+                + " has " + o.id() + " " + o.status() + " at " + o.x() + "," + o.z() + " " + ahead + " m ahead").isFalse();
       }
       assertThat(v.battery()).isBetween(0.0, 100.0);
     }

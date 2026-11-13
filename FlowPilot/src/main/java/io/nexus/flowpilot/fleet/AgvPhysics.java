@@ -30,6 +30,11 @@ public final class AgvPhysics {
   public static final double SAFETY_DISTANCE = 1.75;
   /** m; vehicles further to the side are in another lane */
   public static final double LANE_HALF_WIDTH = 0.6;
+  /**
+   * m along the route: closer than this to a junction (node where lanes merge) only the vehicle holding it may
+   * come, so a vehicle waiting for its turn never has the passing one inside its safety zone.
+   */
+  public static final double JUNCTION_CLAIM = SAFETY_DISTANCE + 0.5;
   /** Repair time of the AGV fault types NAV and COMM. */
   public static final long FAULT_REPAIR_MS = 60_000;
 }

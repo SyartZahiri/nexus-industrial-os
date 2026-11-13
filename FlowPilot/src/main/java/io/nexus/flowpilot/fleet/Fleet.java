@@ -43,6 +43,10 @@ public final class Fleet {
   private final List<Vehicle> vehicles = new ArrayList<>();       // id order, as FleetStore returns them
   /** Transports already reported as unroutable; cleared whenever the graph changes. */
   private final TreeSet<String> reportedBlocked = new TreeSet<>();
+  /** Nodes where two or more lanes merge. */
+  private final Set<String> junctions = new java.util.HashSet<>(); // lookups only
+  /** Junction → vehicle allowed to come closer than JUNCTION_CLAIM. Sorted, so release order is stable. */
+  private final java.util.TreeMap<String, String> claims = new java.util.TreeMap<>();
 
   public Fleet(FleetStore store, TransportStore transports, MaterialServiceImpl materials, PathGraph graph,
                EventPublisher events, UnitOfWork work, SimTime time) {
@@ -54,6 +58,8 @@ public final class Fleet {
     this.work = work;
     this.time = time;
     this.dispatcher = new Dispatcher(graph);
+    Set<String> entered = new java.util.HashSet<>();
+    for (var e : FlowPilotMasterData.edges()) if (!entered.add(e.to())) junctions.add(e.to());
     for (String edge : store.blockedEdges()) graph.setBlocked(edge, true);
     for (AgvRecord r : store.agvs()) {
       var node = graph.node(r.nodeId());
@@ -135,6 +141,7 @@ public final class Fleet {
    */
   public void step(long dtMs) {
     dispatch();
+    releaseClaims();
     for (Vehicle v : vehicles) {
       try {
         move(v, dtMs);
@@ -221,8 +228,8 @@ public final class Fleet {
         }
       }
       case TO_PICKUP, TO_DROP, TO_CHARGE -> {
-        if (v.route.isEmpty() && !v.nodeId.equals(v.goal)) replan(v);
-        if (v.route.isEmpty()) stand(v, dt);
+        if (v.holding || (v.route.isEmpty() && !v.nodeId.equals(v.goal))) replan(v);
+        if (v.route.isEmpty() || v.holding) stand(v, dt);
         else drive(v, dt);
       }
       case CHARGING -> {
@@ -251,7 +258,7 @@ public final class Fleet {
   }
 
   private void idle(Vehicle v) {
-    if (v.heldLoad != null) return; // repaired, the replacement is on its way to take the load over
+    if (v.heldLoad != null) return; // still holds a load (repair takes it back); never drive off with it
     if (v.chargeRequested) {
       v.chargeRequested = false;
       v.chargeTarget = AgvPhysics.MANUAL_CHARGE_TARGET;
@@ -503,7 +510,28 @@ public final class Fleet {
     graphChanged(); // vehicles waiting for a route replan in their next move
     if (v.heldLoad == null) return;
     TransportOrder t = transport(v.heldLoad);
-    if (t.status() == TransportStatus.FAILED || t.status() == TransportStatus.CREATED) takeBack(v, t);
+    if (t.status() == TransportStatus.ASSIGNED || t.status() == TransportStatus.TO_PICKUP) {
+      t = releaseReplacement(t);
+    }
+    takeBack(v, t);
+  }
+
+  /** The replacement on its way is no longer needed: back to the queue, its vehicle is free. */
+  private TransportOrder releaseReplacement(TransportOrder t) {
+    Vehicle rescuer = vehicle(t.agvId());
+    AgvRecord[] saved = new AgvRecord[1];
+    TransportOrder[] back = new TransportOrder[1];
+    work.inNewTransaction(() -> {
+      back[0] = moveTransport(t, TransportStatus.CREATED, null, EventTypes.TRANSPORT_STATE);
+      saved[0] = saveAgv(rescuer, rescuer.status, AgvStatus.IDLE, t.orderId());
+    });
+    rescuer.status = AgvStatus.IDLE;
+    rescuer.saved = saved[0];
+    rescuer.transportId = null;
+    rescuer.goal = null;
+    rescuer.rescueFrom = null;
+    keepOnlyNextNode(rescuer);
+    return back[0];
   }
 
   /** A repaired vehicle that still carries its load continues the transport itself; the load is on board. */
@@ -562,23 +590,30 @@ public final class Fleet {
 
   private void setRoute(Vehicle v, String goal, Route r) {
     v.goal = goal;
-    v.route.clear();
     v.routeBlockedReported = false;
-    if (r == null || !r.found()) return;
+    if (r == null || !r.found()) {
+      // waits for a route at the next node; dropping that node would make it drive back against its edge
+      keepOnlyNextNode(v);
+      return;
+    }
+    v.route.clear();
+    v.holding = false;
     List<String> nodes = r.nodes();
     int first = nodes.get(0).equals(v.nodeId) && dispatcher.atNode(v) ? 1 : 0;
     for (int i = first; i < nodes.size(); i++) v.route.add(nodes.get(i));
   }
 
-  /** A vehicle stopped on an edge keeps only the node it is heading for. */
+  /** A vehicle without a route keeps only the node ahead (if it stands on an edge) and waits where it is. */
   private void keepOnlyNextNode(Vehicle v) {
     if (v.route.isEmpty() || dispatcher.atNode(v)) {
       v.route.clear();
+      v.holding = false;
       return;
     }
     String next = v.route.get(0);
     v.route.clear();
     v.route.add(next);
+    v.holding = true;
   }
 
   /** New route to the goal; reports route.blocked once while there is none and route.replanned once there is. */
@@ -613,6 +648,10 @@ public final class Fleet {
     else v.speed = Math.max(vmax, v.speed - AgvPhysics.BRAKE * dt);
     double step = v.speed * dt;
     double moved = 0;
+    if (step > 1e-9 && !claimJunctions(v, AgvPhysics.JUNCTION_CLAIM + step)) {
+      v.speed = 0; // waits outside the claim distance until the junction is free
+      step = 0;
+    }
     while (step > 1e-9 && !v.route.isEmpty()) {
       var n = graph.node(v.route.get(0));
       double dx = n.x() - v.x, dz = n.z() - v.z;
@@ -656,14 +695,58 @@ public final class Fleet {
     return sum;
   }
 
-  /** True if another vehicle is ahead within the safety distance plus this step. Lower id wins a mutual block. */
+  /**
+   * Claims every junction within the given distance along the route. False, and nothing claimed, if another
+   * vehicle holds one of them; the holder is then recorded as what this vehicle waits for.
+   */
+  private boolean claimJunctions(Vehicle v, double within) {
+    List<String> ahead = new ArrayList<>();
+    double px = v.x, pz = v.z, travelled = 0;
+    for (String id : v.route) {
+      var n = graph.node(id);
+      double dx = n.x() - px, dz = n.z() - pz;
+      travelled += Math.sqrt(dx * dx + dz * dz);
+      if (travelled > within) break;
+      if (junctions.contains(id)) ahead.add(id);
+      px = n.x();
+      pz = n.z();
+    }
+    for (String j : ahead) {
+      String holder = claims.get(j);
+      if (holder != null && !holder.equals(v.id)) {
+        v.blockedBy = holder;
+        return false;
+      }
+    }
+    for (String j : ahead) claims.put(j, v.id);
+    return true;
+  }
+
+  /** A vehicle gives a junction up once it is no longer on its route and it is a safety distance away. */
+  private void releaseClaims() {
+    for (String j : new ArrayList<>(claims.keySet())) {
+      Vehicle u = vehicle(claims.get(j));
+      var n = graph.node(j);
+      double dx = n.x() - u.x, dz = n.z() - u.z;
+      if (!u.route.contains(j) && Math.sqrt(dx * dx + dz * dz) >= AgvPhysics.SAFETY_DISTANCE) claims.remove(j);
+    }
+  }
+
+  /**
+   * True if another vehicle is ahead within the safety distance plus this step: straight ahead, or along the
+   * route around a corner. Lower id wins a mutual block.
+   */
   private boolean obstructed(Vehicle v, double look) {
+    double limit = AgvPhysics.SAFETY_DISTANCE + look;
     for (Vehicle o : vehicles) {
       if (o == v) continue;
       double dx = o.x - v.x, dz = o.z - v.z;
       double ahead = dx * v.dirX + dz * v.dirZ;
       double side = Math.abs(-dx * v.dirZ + dz * v.dirX);
-      if (ahead > 0 && ahead < AgvPhysics.SAFETY_DISTANCE + look && side < AgvPhysics.LANE_HALF_WIDTH) {
+      boolean straight = ahead > 0 && ahead < limit && side < AgvPhysics.LANE_HALF_WIDTH;
+      // a replacement comes up to the following distance of the failed vehicle, from whatever side
+      boolean rescue = o.id.equals(v.rescueFrom) && Math.sqrt(dx * dx + dz * dz) < limit;
+      if (straight || rescue || onRouteWithin(v, o, limit)) {
         boolean mutual = v.id.equals(o.blockedBy);
         if (!mutual || o.id.compareTo(v.id) < 0) {
           v.blockedBy = o.id;
@@ -673,6 +756,38 @@ public final class Fleet {
     }
     v.blockedBy = null;
     return false;
+  }
+
+  /**
+   * True if o stands on v's remaining route (within a lane's half width) less than limit metres ahead. Past the
+   * goal the route counts as going straight on: a vehicle just beyond a dock blocks the one heading for it.
+   */
+  private boolean onRouteWithin(Vehicle v, Vehicle o, double limit) {
+    double px = v.x, pz = v.z, travelled = 0;
+    double ux = v.dirX, uz = v.dirZ;
+    for (String id : v.route) {
+      if (travelled >= limit) return false;
+      var n = graph.node(id);
+      double sx = n.x() - px, sz = n.z() - pz;
+      double len = Math.sqrt(sx * sx + sz * sz);
+      if (len > 1e-9) {
+        ux = sx / len;
+        uz = sz / len;
+        if (onSegment(o, px, pz, ux, uz, len, limit - travelled)) return true;
+      }
+      travelled += len;
+      px = n.x();
+      pz = n.z();
+    }
+    return travelled < limit && onSegment(o, px, pz, ux, uz, Double.POSITIVE_INFINITY, limit - travelled);
+  }
+
+  /** o lies within a lane's half width of the segment from (px, pz) along (ux, uz), less than limit along it. */
+  private static boolean onSegment(Vehicle o, double px, double pz, double ux, double uz, double len, double limit) {
+    double dx = o.x - px, dz = o.z - pz;
+    double along = dx * ux + dz * uz;
+    double side = Math.abs(-dx * uz + dz * ux);
+    return along > 0 && along <= len && along < limit && side < AgvPhysics.LANE_HALF_WIDTH;
   }
 
   /** True if moving to (nx, nz) would put this vehicle into the safety zone in front of a moving vehicle. */
