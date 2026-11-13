@@ -79,7 +79,8 @@ public final class JsonWriter {
       throw new IllegalArgumentException("Zahl nicht als JSON darstellbar: " + value);
     }
     separator();
-    long scaled = Math.round(value * 1_000_000);
+    // floor(x + 0.5) instead of Math.round: the same rounding of exact halves on every runtime
+    long scaled = (long) Math.floor(value * 1_000_000 + 0.5);
     if (scaled < 0) out.append('-');
     long abs = Math.abs(scaled);
     out.append(abs / 1_000_000);
@@ -127,7 +128,12 @@ public final class JsonWriter {
         case '\r' -> out.append("\\r");
         case '\t' -> out.append("\\t");
         default -> {
-          if (c < 0x20) {
+          boolean high = c >= 0xD800 && c <= 0xDBFF;
+          boolean low = c >= 0xDC00 && c <= 0xDFFF;
+          boolean pairedHigh = high && i + 1 < s.length() && s.charAt(i + 1) >= 0xDC00 && s.charAt(i + 1) <= 0xDFFF;
+          boolean pairedLow = low && i > 0 && s.charAt(i - 1) >= 0xD800 && s.charAt(i - 1) <= 0xDBFF;
+          // control characters, lone surrogates and the JavaScript line separators U+2028/U+2029 as unicode escapes
+          if (c < 0x20 || c == 0x2028 || c == 0x2029 || (high && !pairedHigh) || (low && !pairedLow)) {
             String hex = Integer.toHexString(c);
             out.append("\\u");
             for (int k = hex.length(); k < 4; k++) out.append('0');

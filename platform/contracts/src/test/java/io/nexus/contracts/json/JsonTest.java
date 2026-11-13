@@ -49,6 +49,28 @@ class JsonTest {
     assertThat(JsonReader.parse(" [ 1 , -2.5e1 ] ")).isEqualTo(List.of(1L, -25.0));
   }
 
+  /** Lone surrogates are not valid UTF-16 text; U+2028/U+2029 break JavaScript string literals. */
+  @Test
+  void escapesLoneSurrogatesAndLineSeparators() {
+    assertThat(new JsonWriter().value("a\uD800b").toString()).isEqualTo("\"a\\ud800b\"");
+    assertThat(new JsonWriter().value("x\u2028y\u2029").toString()).isEqualTo("\"x\\u2028y\\u2029\"");
+    // a valid pair stays as it is
+    assertThat(new JsonWriter().value("\uD83D\uDE00").toString()).isEqualTo("\"\uD83D\uDE00\"");
+    assertThatThrownBy(() -> JsonReader.parse("\"\\ud800\"")).isInstanceOf(DomainException.class);
+    assertThat(JsonReader.parse("\"\\ud83d\\ude00\"")).isEqualTo("\uD83D\uDE00");
+  }
+
+  @Test
+  void nestingAndLengthAreBounded() {
+    String deep64 = "[".repeat(64) + "]".repeat(64);
+    assertThat(JsonReader.parse(deep64)).isNotNull();
+    assertThatThrownBy(() -> JsonReader.parse("[".repeat(65) + "]".repeat(65))).isInstanceOf(DomainException.class)
+        .hasMessageContaining("tief");
+    assertThatThrownBy(() -> JsonReader.parse("[".repeat(100_000))).isInstanceOf(DomainException.class);
+    assertThatThrownBy(() -> JsonReader.parse("\"" + "x".repeat(JsonReader.MAX_LENGTH) + "\""))
+        .isInstanceOf(DomainException.class).hasMessageContaining("lang");
+  }
+
   @Test
   void brokenJsonNamesThePosition() {
     assertThatThrownBy(() -> JsonReader.parse("{\"a\":1,}")).isInstanceOf(DomainException.class)

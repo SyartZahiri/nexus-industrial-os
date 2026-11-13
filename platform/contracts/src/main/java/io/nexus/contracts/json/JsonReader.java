@@ -11,8 +11,14 @@ import java.util.Map;
  * Double. Malformed input raises DomainException INVALID naming the position.
  */
 public final class JsonReader {
+  /** Commands are small; anything longer is refused before parsing. */
+  public static final int MAX_LENGTH = 1_000_000;
+  /** Deep enough for every message of the platform, shallow enough that recursion never runs out of stack. */
+  public static final int MAX_DEPTH = 64;
+
   private final String s;
   private int pos;
+  private int depth;
 
   private JsonReader(String s) {
     this.s = s;
@@ -20,6 +26,7 @@ public final class JsonReader {
 
   public static Object parse(String json) {
     if (json == null) throw DomainException.invalid("JSON fehlt");
+    if (json.length() > MAX_LENGTH) throw DomainException.invalid("JSON zu lang: " + json.length() + " Zeichen");
     var r = new JsonReader(json);
     r.skipSpace();
     Object value = r.value();
@@ -46,11 +53,13 @@ public final class JsonReader {
   }
 
   private Map<String, Object> object() {
+    enter();
     pos++;
     Map<String, Object> map = new LinkedHashMap<>();
     skipSpace();
     if (peek() == '}') {
       pos++;
+      depth--;
       return map;
     }
     while (true) {
@@ -67,16 +76,19 @@ public final class JsonReader {
         continue;
       }
       expect('}');
+      depth--;
       return map;
     }
   }
 
   private List<Object> array() {
+    enter();
     pos++;
     List<Object> list = new ArrayList<>();
     skipSpace();
     if (peek() == ']') {
       pos++;
+      depth--;
       return list;
     }
     while (true) {
@@ -88,6 +100,7 @@ public final class JsonReader {
         continue;
       }
       expect(']');
+      depth--;
       return list;
     }
   }
@@ -121,10 +134,27 @@ public final class JsonReader {
             code = code * 16 + d;
           }
           out.append((char) code);
+          checkSurrogate(out);
         }
         default -> throw error("unbekanntes Escape \\" + e);
       }
     }
+  }
+
+  private void enter() {
+    if (++depth > MAX_DEPTH) throw error("zu tief verschachtelt (mehr als " + MAX_DEPTH + " Ebenen)");
+  }
+
+  /** A unicode escape must not leave a lone surrogate: a high one needs a low one right after it. */
+  private void checkSurrogate(StringBuilder out) {
+    char last = out.charAt(out.length() - 1);
+    boolean high = last >= 0xD800 && last <= 0xDBFF;
+    boolean low = last >= 0xDC00 && last <= 0xDFFF;
+    if (low) {
+      boolean paired = out.length() >= 2 && out.charAt(out.length() - 2) >= 0xD800 && out.charAt(out.length() - 2) <= 0xDBFF;
+      if (!paired) throw error("einzelnes Surrogat");
+    }
+    if (high && !s.startsWith("\\u", pos)) throw error("einzelnes Surrogat");
   }
 
   private Object number() {
