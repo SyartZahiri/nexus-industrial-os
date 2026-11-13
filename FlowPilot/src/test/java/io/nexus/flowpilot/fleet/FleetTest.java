@@ -231,6 +231,55 @@ class FleetTest {
     f.runUntil(() -> f.transport(id).status() == TransportStatus.DELIVERED, 120);
   }
 
+  /** Review I3: a reservation released before pickup ends the transport instead of freezing every step. */
+  @Test
+  void releasedReservationCancelsThePickupAndTheFleetKeepsMoving() {
+    var f = new FleetFixture();
+    String a = f.supply("RM-GH200", "CNC-01", 1, Priority.NORMAL);
+    String b = f.supply("RM-AW50", "CNC-03", 1, Priority.NORMAL);
+    f.run(1);
+    String agv = f.transport(a).agvId();
+    f.fp.materials().release(f.stock.reservation(f.transport(a).reservationId()).orElseThrow().requestId());
+    f.runUntil(() -> f.transport(b).status() == TransportStatus.DELIVERED, 300);
+    assertThat(f.transport(a).status()).isEqualTo(TransportStatus.CANCELLED);
+    assertThat(f.vehicle(agv).transportId()).isNull();
+    assertThat(f.stock.lockMaterial("RM-GH200").get(0)).isEqualTo(new StockLine("RM-GH200", "RAW-A", 30, 0));
+  }
+
+  /** Review I3: whatever goes wrong for one vehicle is reported once; the others keep driving. */
+  @Test
+  void aFailingVehicleDoesNotStopTheOthers() {
+    var f = new FleetFixture();
+    String a = f.supply("RM-GH200", "CNC-01", 1, Priority.NORMAL);
+    // b does not pass the raw store, where a's vehicle will be stuck
+    String b = f.fp.transports().requestTransport(new io.nexus.contracts.port.TransportService.TransportRequest(
+        "TR-WIP", io.nexus.contracts.Domain.TransportKind.WIP, "PO-W", null, 1,
+        io.nexus.contracts.Place.machineOut("CNC-03"), io.nexus.contracts.Place.machineIn("CNC-04"), Priority.NORMAL,
+        null));
+    f.run(1);
+    // a write behind FlowPilot's back: the fleet's next transition for this transport is illegal
+    TransportOrder t = f.transport(a);
+    f.transports.update(t.withStatus(TransportStatus.CANCELLED, t.agvId()));
+    f.runUntil(() -> f.transport(b).status() == TransportStatus.DELIVERED, 300);
+    assertThat(f.events().stream().filter(e -> e.type().equals(EventTypes.DECISION)
+        && e.severity() == io.nexus.contracts.Domain.Severity.ERROR)).hasSize(1);
+  }
+
+  /** Review I5: a charge order given while OFFLINE must not keep the AGV out of dispatch after enabling. */
+  @Test
+  void chargeOrderedWhileOfflineDoesNotBlockDispatchAfterEnabling() {
+    var f = new FleetFixture();
+    for (var a : FlowPilotMasterData.agvs()) f.fp.setAgvEnabled(a.id(), false);
+    f.step();
+    assertThat(f.vehicle("AGV-01").status()).isEqualTo(AgvStatus.OFFLINE);
+    f.fp.sendToCharge("AGV-01");
+    f.fp.setAgvEnabled("AGV-01", true);
+    f.step();
+    String id = f.supply("RM-GH200", "CNC-01", 1, Priority.NORMAL);
+    f.runUntil(() -> f.transport(id).agvId() != null, 120);
+    assertThat(f.transport(id).agvId()).isEqualTo("AGV-01");
+  }
+
   @Test
   void sameSeedSameEvents() {
     assertThat(scriptedRun()).isEqualTo(scriptedRun());

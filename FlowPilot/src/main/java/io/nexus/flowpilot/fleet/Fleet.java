@@ -129,9 +129,20 @@ public final class Fleet {
 
   // ---- step ----------------------------------------------------------------------------------------
 
+  /**
+   * One step. A unit that fails for one vehicle or transport is reported once and skipped; the others carry on.
+   * Its vehicle keeps its state (memory only changes after a commit) and tries again next step.
+   */
   public void step(long dtMs) {
     dispatch();
-    for (Vehicle v : vehicles) move(v, dtMs);
+    for (Vehicle v : vehicles) {
+      try {
+        move(v, dtMs);
+        v.lastFailure = null;
+      } catch (RuntimeException e) {
+        reportFailure(v.id, v.transportId, v, e);
+      }
+    }
     persist();
   }
 
@@ -149,9 +160,25 @@ public final class Fleet {
         if (c.blocked()) reportBlocked(t);
         continue;
       }
-      assign(t, c);
-      free.remove(c.vehicle());
+      try {
+        assign(t, c);
+        free.remove(c.vehicle());
+      } catch (RuntimeException e) {
+        reportFailure(c.vehicle().id, t.id(), c.vehicle(), e);
+      }
     }
+  }
+
+  /** decision with severity ERROR, once per vehicle until it moves without failing again. */
+  private void reportFailure(String agvId, String transportId, Vehicle v, RuntimeException e) {
+    // only business messages leave the core, as in EventBus
+    String message = e instanceof DomainException || e instanceof io.nexus.contracts.state.IllegalTransitionException
+        ? e.getMessage() : e.getClass().getSimpleName();
+    if (message.equals(v.lastFailure)) return;
+    v.lastFailure = message;
+    work.inNewTransaction(() -> events.publish(EventTypes.DECISION, SOURCE, Severity.ERROR, null,
+        new Payloads.Decision(transportId == null ? agvId : transportId, agvId, List.of(),
+            "Schritt übersprungen: " + message)));
   }
 
   private void reportBlocked(TransportOrder t) {
@@ -209,7 +236,7 @@ public final class Fleet {
       case OFFLINE -> {
         if (atOwnCharger(v)) charge(v, dt);
         else stand(v, dt);
-        if (v.enabled) change(v, AgvStatus.IDLE, null);
+        if (v.enabled) change(v, AgvStatus.IDLE, null); // a charge ordered meanwhile is pending in chargeRequested
       }
       case IDLE -> {
         stand(v, dt);
@@ -298,6 +325,10 @@ public final class Fleet {
 
   private void arrivedAtPickup(Vehicle v) {
     TransportOrder t = transport(v.transportId);
+    if (t.kind() == TransportKind.SUPPLY && t.reservationId() != null && materials.released(t.reservationId())) {
+      cancelReleased(v, t);
+      return;
+    }
     AgvRecord[] saved = new AgvRecord[1];
     work.inNewTransaction(() -> {
       moveTransport(t, TransportStatus.LOADING, v.id, EventTypes.TRANSPORT_STATE);
@@ -312,6 +343,30 @@ public final class Fleet {
     Vehicle holder = holderOf(t.id());
     if (holder != null) holder.heldLoad = null; // the load changes vehicles
     v.rescueFrom = null;
+  }
+
+  /** The order gave its reservation back before pickup (e.g. it was cancelled): nothing to carry any more. */
+  private void cancelReleased(Vehicle v, TransportOrder t) {
+    AgvRecord[] saved = new AgvRecord[1];
+    work.inNewTransaction(() -> {
+      events.publish(EventTypes.DECISION, SOURCE, Severity.WARNING, t.orderId(), new Payloads.Decision(t.id(), v.id,
+          List.of(), "Reservierung " + t.reservationId() + " freigegeben, Transport entfällt"));
+      moveTransport(t, TransportStatus.CANCELLED, v.id, EventTypes.TRANSPORT_STATE);
+      saved[0] = saveAgv(v, v.status, AgvStatus.IDLE, t.orderId());
+    });
+    v.status = AgvStatus.IDLE;
+    v.saved = saved[0];
+    v.transportId = null;
+    v.goal = null;
+    v.rescueFrom = null;
+  }
+
+  /** Refuses to cancel a transport whose load is still on a failed vehicle: it would be stranded there. */
+  public void checkCancellable(String transportId) {
+    if (holderOf(transportId) != null) {
+      throw DomainException.conflict("Transport " + transportId
+          + " kann nicht storniert werden: die Ladung liegt auf einem ausgefallenen AGV");
+    }
   }
 
   private void finishLoading(Vehicle v) {
@@ -355,6 +410,7 @@ public final class Fleet {
         saved[0] = saveAgv(v, v.status, AgvStatus.IDLE, t.orderId());
       });
     } catch (DomainException notStored) {
+      if (notStored.kind() != DomainException.Kind.CONFLICT) throw notStored; // anything else is not "full"
       // the finished goods store is full: stay in UNLOADING, retry every step, warn once
       if (!v.unloadWarned) {
         v.unloadWarned = true;
@@ -659,15 +715,17 @@ public final class Fleet {
     persist();
   }
 
-  /** Charges to 95 %; a busy vehicle goes once its transport is done. */
+  /**
+   * Charges to 95 %. A vehicle already charging or on its way just gets the higher target; any other one goes
+   * as soon as it is idle (after its transport, its repair, or once enabled again).
+   */
   public void sendToCharge(String agvId) {
     Vehicle v = vehicle(agvId);
-    if (v.transportId != null || v.status == AgvStatus.FAULT) {
+    if (v.transportId == null && (v.status == AgvStatus.CHARGING || v.status == AgvStatus.TO_CHARGE)) {
+      v.chargeTarget = AgvPhysics.MANUAL_CHARGE_TARGET;
+    } else {
       v.chargeRequested = true;
-      return;
     }
-    v.chargeTarget = AgvPhysics.MANUAL_CHARGE_TARGET;
-    if (v.status == AgvStatus.IDLE) goCharge(v);
   }
 
   // ---- bookkeeping ---------------------------------------------------------------------------------

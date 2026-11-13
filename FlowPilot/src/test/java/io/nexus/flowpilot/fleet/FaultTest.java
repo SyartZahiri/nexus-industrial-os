@@ -93,6 +93,24 @@ class FaultTest {
         && ((Payloads.StockChanged) e.payload()).materialId().equals("RM-GH200"))).hasSize(2); // reserve, consume
   }
 
+  /** Review I1: the load is on the failed AGV; cancelling would strand it and take that AGV out of service. */
+  @Test
+  void transportWhoseLoadIsOnAFailedAgvCannotBeCancelled() {
+    var f = new FleetFixture();
+    String id = f.supply("RM-GH200", "CNC-01", 5, Priority.NORMAL);
+    f.runUntil(() -> f.transport(id).status() == TransportStatus.IN_TRANSIT, 120);
+    f.run(2);
+    String failed = f.transport(id).agvId();
+    f.fp.injectFault(failed, null);
+    f.step();
+    assertThat(f.transport(id).status()).isEqualTo(TransportStatus.TO_PICKUP);
+    assertKind(catchThrowable(() -> f.fp.transports().cancel(id)), DomainException.Kind.CONFLICT);
+    assertThat(f.transport(id).status()).isEqualTo(TransportStatus.TO_PICKUP);
+    f.runUntil(() -> f.transport(id).status() == TransportStatus.DELIVERED, 400);
+    f.runUntil(() -> f.vehicle(failed).status() == AgvStatus.CHARGING || f.vehicle(failed).status() == AgvStatus.IDLE
+        && f.vehicle(failed).route().isEmpty(), 120);
+  }
+
   @Test
   void repairedAgvBeforeRescueTakesItsOrderBack() {
     var f = new FleetFixture();

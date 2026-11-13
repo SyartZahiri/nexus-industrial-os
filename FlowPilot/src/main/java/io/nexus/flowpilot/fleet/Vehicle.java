@@ -45,6 +45,8 @@ final class Vehicle {
   String heldLoad;
   /** For a replacement: the failed vehicle it picks the load up from. Close behind it counts as arrived. */
   String rescueFrom;
+  /** Message of the last failed step, so a vehicle stuck on the same problem is reported once. */
+  String lastFailure;
   /** What the FleetStore holds; compared to decide whether to write. */
   AgvRecord saved;
 

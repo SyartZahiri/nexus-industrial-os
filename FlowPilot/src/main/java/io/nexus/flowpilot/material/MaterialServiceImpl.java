@@ -169,6 +169,11 @@ public final class MaterialServiceImpl implements MaterialService {
     return out;
   }
 
+  /** True if the reservation was given back (released) and can no longer be consumed. */
+  public boolean released(String reservationId) {
+    return stock.reservation(reservationId).map(r -> r.status() == Reservation.Status.RELEASED).orElse(false);
+  }
+
   /**
    * Takes reserved stock out at pickup: ACTIVE → CONSUMED, on hand and reserved both drop.
    * An already consumed reservation is a no-op. Runs in the caller's unit of work.

@@ -71,6 +71,7 @@ public final class FlowPilot {
       }
       @Override public void cancel(String transportId) {
         synchronized (FlowPilot.this) {
+          fleet.checkCancellable(transportId);
           transports.cancel(transportId);
           fleet.transportChanged(transportId);
         }

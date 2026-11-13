@@ -13,6 +13,7 @@ import io.nexus.contracts.port.IdSource;
 import io.nexus.contracts.port.TransportService;
 import io.nexus.contracts.sim.SimTime;
 import io.nexus.contracts.state.TransportStatus;
+import io.nexus.flowpilot.master.FlowPilotMasterData;
 import io.nexus.flowpilot.material.MaterialServiceImpl;
 import io.nexus.flowpilot.store.Reservation;
 import io.nexus.flowpilot.store.StockStore;
@@ -91,7 +92,19 @@ public final class TransportServiceImpl implements TransportService {
             + "Lagerplatzes und derselben Menge");
       }
     }
-    if (r.kind() == TransportKind.PUTAWAY) checkPutawayTarget(r.to());
+    if (r.kind() == TransportKind.PUTAWAY) {
+      checkPutawayTarget(r.to());
+      // checked here, because at unloading nothing could be done about it any more
+      FlowPilotMasterData.Material material = null;
+      for (var m : FlowPilotMasterData.materials()) if (m.id().equals(r.materialId())) material = m;
+      if (material == null) throw DomainException.notFound("Material", r.materialId());
+      if (!material.kind().equals("FINISHED")) {
+        throw DomainException.invalid("Eingelagert wird nur Fertigware, nicht " + r.materialId());
+      }
+      if (r.quantity() > places.location(r.to().id()).capacity()) {
+        throw DomainException.invalid("Menge übersteigt die Kapazität von Lagerplatz " + r.to().id());
+      }
+    }
   }
 
   private void checkPutawayTarget(Place to) {

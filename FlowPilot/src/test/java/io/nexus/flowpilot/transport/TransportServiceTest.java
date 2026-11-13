@@ -136,6 +136,19 @@ class TransportServiceTest {
         Place.machineOut("QC-01"), Place.storage("FG-A"), Priority.NORMAL, null);
     assertKind(org.assertj.core.api.Assertions.catchThrowable(() -> transports.requestTransport(withoutMaterial)),
         DomainException.Kind.INVALID);
+    // review I2: such loads could never be booked and kept an AGV in UNLOADING for good
+    var rawMaterial = new TransportRequest("TR-4", TransportKind.PUTAWAY, "PO-0001", "RM-GH200", 1,
+        Place.machineOut("QC-01"), Place.storage("FG-A"), Priority.NORMAL, null);
+    assertKind(org.assertj.core.api.Assertions.catchThrowable(() -> transports.requestTransport(rawMaterial)),
+        DomainException.Kind.INVALID);
+    var unknown = new TransportRequest("TR-5", TransportKind.PUTAWAY, "PO-0001", "NOPE", 1,
+        Place.machineOut("QC-01"), Place.storage("FG-A"), Priority.NORMAL, null);
+    assertKind(org.assertj.core.api.Assertions.catchThrowable(() -> transports.requestTransport(unknown)),
+        DomainException.Kind.NOT_FOUND);
+    var tooMuch = new TransportRequest("TR-6", TransportKind.PUTAWAY, "PO-0001", "FG-GH200", 161,
+        Place.machineOut("QC-01"), Place.storage("FG-A"), Priority.NORMAL, null);
+    assertKind(org.assertj.core.api.Assertions.catchThrowable(() -> transports.requestTransport(tooMuch)),
+        DomainException.Kind.INVALID);
     var ok = new TransportRequest("TR-2", TransportKind.PUTAWAY, "PO-0001", "FG-GH200", 5,
         Place.machineOut("QC-01"), Place.storage("FG-A"), Priority.NORMAL, null);
     TransportOrder t = store.byId(transports.requestTransport(ok)).orElseThrow();
