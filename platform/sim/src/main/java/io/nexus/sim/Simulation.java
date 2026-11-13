@@ -18,9 +18,13 @@ import java.util.List;
 public final class Simulation implements MachineControl {
   public record MachineSpec(String id, MachineKind kind) {}
 
-  /** A conveyor that carries batches from an assembly cell to the machine it feeds. */
-  public record ConveyorLink(String fromMachineId, String conveyorId, String toMachineId, double distanceM,
-                             double speedMps) {}
+  /** A conveyor that carries batches from an assembly cell (dropped at dropAtM) to the machine it feeds (at takeAtM). */
+  public record ConveyorLink(String fromMachineId, String conveyorId, String toMachineId, double dropAtM,
+                             double takeAtM, double speedMps) {}
+
+  public record ConveyorItem(String orderId, int stepSeq, double positionM) {}
+
+  public record ConveyorView(String conveyorId, List<ConveyorItem> items) {}
 
   public record MachineView(String id, MachineStatus status, String orderId, int stepSeq, double progress,
                             double temperature, double vibration, double power, double spindle, double wear,
@@ -28,11 +32,23 @@ public final class Simulation implements MachineControl {
 
   private final List<MachineSim> machines = new ArrayList<>();
   private final MachineFeedback feedback;
+  private final SeededRandom random;
+  private final List<ConveyorLink> links;
+  private final List<ConveyorSim> conveyors = new ArrayList<>();
+  private final QualityModel quality = new QualityModel();
   private SimRules rules = SimRules.DEFAULT;
 
   public Simulation(List<MachineSpec> specs, List<ConveyorLink> conveyors, SeededRandom random,
                     MachineFeedback feedback) {
     this.feedback = feedback;
+    this.random = random;
+    this.links = List.copyOf(conveyors);
+    for (ConveyorLink l : this.links) {
+      boolean known = false;
+      for (ConveyorSim c : this.conveyors) known |= c.id.equals(l.conveyorId());
+      if (!known) this.conveyors.add(new ConveyorSim(l.conveyorId()));
+    }
+    this.conveyors.sort(Comparator.comparing((ConveyorSim c) -> c.id));
     List<MachineSpec> sorted = new ArrayList<>(specs);
     sorted.sort(Comparator.comparing(MachineSpec::id));
     for (MachineSpec s : sorted) machines.add(new MachineSim(s.id(), s.kind(), random, feedback));
@@ -46,15 +62,47 @@ public final class Simulation implements MachineControl {
     return rules;
   }
 
-  /** Advances every machine by dtMs in id order. */
+  /**
+   * Advances conveyors, then every machine by dtMs in id order. Conveyors go first, so a batch put on the belt
+   * in this step starts moving in the next one.
+   */
   public void step(long dtMs) {
+    for (ConveyorSim c : conveyors) {
+      for (ConveyorSim.Item item : c.step(dtMs)) {
+        feedback.conveyorDelivered(item.link.toMachineId(), item.orderId, item.stepSeq, item.quantity);
+      }
+    }
     for (int i = 0; i < machines.size(); i++) {
       MachineSim m = machines.get(i);
       MachineJob finished = m.step(dtMs, rules);
-      if (finished != null) {
-        feedback.jobFinished(m.id, finished.orderId(), finished.stepSeq(), finished.quantity(), 0);
+      if (finished != null) finish(m, finished);
+    }
+  }
+
+  private void finish(MachineSim m, MachineJob job) {
+    int scrap = 0;
+    if (m.kind == MachineKind.QC) scrap = quality.inspect(job.orderId(), job.quantity(), random);
+    else quality.recordStep(job.orderId(), m);
+    feedback.jobFinished(m.id, job.orderId(), job.stepSeq(), job.quantity() - scrap, scrap);
+    for (ConveyorLink l : links) {
+      if (l.fromMachineId().equals(m.id)) {
+        for (ConveyorSim c : conveyors) {
+          if (c.id.equals(l.conveyorId())) {
+            c.items.add(new ConveyorSim.Item(l, job.orderId(), job.stepSeq() + 1, job.quantity() - scrap));
+          }
+        }
       }
     }
+  }
+
+  public List<ConveyorView> conveyors() {
+    List<ConveyorView> views = new ArrayList<>();
+    for (ConveyorSim c : conveyors) {
+      List<ConveyorItem> items = new ArrayList<>();
+      for (ConveyorSim.Item i : c.items) items.add(new ConveyorItem(i.orderId, i.stepSeq, i.positionM()));
+      views.add(new ConveyorView(c.id, items));
+    }
+    return views;
   }
 
   public List<MachineView> machines() {
