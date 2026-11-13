@@ -52,6 +52,11 @@ public final class SmartFactory implements MachineFeedback {
   public static final String CONSUMER = "smartfactory";
 
   private final Object lock;
+  /** Commands of this facade currently running on the (single) thread holding the lock. */
+  private int commandDepth;
+  /** Materials whose stock changed while a command was running, in arrival order. */
+  private final java.util.LinkedHashSet<String> deferredStock = new java.util.LinkedHashSet<>();
+  private boolean deferredMoveOn;
   private final OrderStore orders;
   private final MachineStore machineStore;
   private final UnitOfWork work;
@@ -214,9 +219,25 @@ public final class SmartFactory implements MachineFeedback {
     flow.advance();
   }
 
-  /** Runs in the delivering bus's unit of work, so the processed marker and these writes commit together. */
+  /**
+   * Runs in the delivering bus's unit of work, so the processed marker and these writes commit together.
+   *
+   * <p>An event can arrive while SmartFactory is in the middle of one of its own commands: FlowPilot's reservation
+   * commits in a unit of its own and its stock.changed is delivered at once, before the command has created the
+   * operation's containers. Reacting then would see a half-built order (an operation without containers counts as
+   * supplied). Such a re-entrant event only records what it needs; the command finishes the follow-up work itself.
+   */
   private void consume(NexusEvent event) {
     synchronized (lock) {
+      if (commandDepth > 0) {
+        if (event.type().equals(EventTypes.STOCK_CHANGED)) {
+          deferredStock.add(((Payloads.StockChanged) event.payload()).materialId());
+        } else if (event.type().equals(EventTypes.TRANSPORT_DELIVERED)) {
+          flow.delivered((Payloads.TransportDelivered) event.payload());
+          deferredMoveOn = true;
+        }
+        return;
+      }
       try {
         if (event.type().equals(EventTypes.STOCK_CHANGED)) {
           orderService.stockChanged(((Payloads.StockChanged) event.payload()).materialId());
@@ -242,11 +263,29 @@ public final class SmartFactory implements MachineFeedback {
   private <T> T inUnit(Supplier<T> action) {
     synchronized (lock) {
       Object[] result = new Object[1];
+      commandDepth++;
       try {
-        work.inNewTransaction(() -> result[0] = action.get());
+        work.inNewTransaction(() -> {
+          result[0] = action.get();
+          // follow-up of events that arrived during the command, in the command's own unit of work
+          while (!deferredStock.isEmpty()) {
+            String materialId = deferredStock.iterator().next();
+            deferredStock.remove(materialId);
+            orderService.stockChanged(materialId);
+            moveOn();
+          }
+          if (deferredMoveOn) {
+            deferredMoveOn = false;
+            moveOn();
+          }
+        });
       } catch (RuntimeException | Error e) {
+        deferredStock.clear();
+        deferredMoveOn = false;
         orderService.forgetPlan();
         throw e;
+      } finally {
+        commandDepth--;
       }
       @SuppressWarnings("unchecked") T t = (T) result[0];
       return t;

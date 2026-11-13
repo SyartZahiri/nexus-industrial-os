@@ -76,7 +76,8 @@ Industire/                    Git-Monorepo
   pom.xml                     Maven-Parent, Java-Release 25, Maven Wrapper
   platform/
     contracts/                Kern: IDs, Enums, Events, Ports, Ereignisverteilung
-    sim/                      Kern: Simulationsuhr, Seed-RNG, Maschinen-/Band-Simulatoren, Szenarien
+    sim/                      Kern: Maschinen- und Bandsimulation, Prüfergebnis
+    plant/                    Kern: Anlage aus Simulation, FlowPilot und SmartFactory, Schrittfolge, Regeln, Zustandsbild
     app/                      Server-Laufzeit: Spring Boot, JDBC-Speicher, REST, WebSocket, Flyway, OPC UA, OR-Tools
     web/                      Browser-Laufzeit: Speicher im Arbeitsspeicher, JS-Brücke, TeaVM-Build
   FlowPilot/                  Kern: Material, Lager, Reservierung, Transport, Flotte, Routing
@@ -208,7 +209,7 @@ Ein AGV hält höchstens einen nicht-terminalen Transportauftrag (Unique-Index a
 - Ein Seed-RNG (konfigurierbar über `nexus.sim.seed` und beim Reset). Kein Aufruf von `Math.random` oder der Systemzeit in Fachlogik.
 - Übernommenes Modell: Rüstzeit, Override, Temperatur erster Ordnung mit Thermoschutz, Verschleiss, MTBF-Störungen, Reparatur und vorbeugende Wartung, Stauförderer, QC-Ausschuss abhängig von der Teilehistorie.
 - Bewegungsdaten liegen im Speicher. Persistiert werden Geschäftsübergänge und Ereignisse. Ein Reset leert die Bewegungstabellen und lädt die Stammdaten neu.
-- Reihenfolge je Schritt: `sim` aktualisiert Anlagen → OPC-UA-Werte → FlowPilot (Flotte, Disposition) → SmartFactory (Freigabe, Planung) → Ereignisse verteilen. Diese feste Reihenfolge ist Teil der Determinismus-Garantie.
+- Reihenfolge je Schritt (in `platform/plant`): Uhr → automatische Aufträge → Versand → Maschinen (Rückmeldungen an SmartFactory, auf dem Server über OPC UA) → FlowPilot (Flotte, Disposition) → Wiederholung fehlgeschlagener Zustellungen. SmartFactory reagiert innerhalb dieser Schritte auf Rückmeldungen und Ereignisse. Diese feste Reihenfolge ist Teil der Determinismus-Garantie.
 
 ## 12. Schnittstellen nach aussen
 

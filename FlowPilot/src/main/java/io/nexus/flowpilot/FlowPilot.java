@@ -15,7 +15,9 @@ import io.nexus.flowpilot.material.MaterialServiceImpl;
 import io.nexus.flowpilot.material.Replenishment;
 import io.nexus.flowpilot.routing.PathGraph;
 import io.nexus.flowpilot.store.FleetStore;
+import io.nexus.flowpilot.store.StockLine;
 import io.nexus.flowpilot.store.StockStore;
+import io.nexus.flowpilot.store.TransportOrder;
 import io.nexus.flowpilot.store.TransportStore;
 import io.nexus.flowpilot.store.memory.MemoryFleetStore;
 import io.nexus.flowpilot.store.memory.MemoryStockStore;
@@ -45,6 +47,8 @@ public final class FlowPilot {
   private final MaterialService materialPort;
   private final TransportService transportPort;
   private final Object lock;
+  private final StockStore stockStore;
+  private final TransportStore transportStore;
 
   public static FlowPilot inMemory(EventPublisher events, MemoryUnitOfWork work, SimTime time, IdSource ids) {
     return new FlowPilot(new MemoryStockStore(work), new MemoryTransportStore(work), new MemoryFleetStore(work),
@@ -54,6 +58,8 @@ public final class FlowPilot {
   public FlowPilot(StockStore stock, TransportStore transportStore, FleetStore fleetStore, EventPublisher events,
                    UnitOfWork work, SimTime time, IdSource ids) {
     this.lock = events;
+    this.stockStore = stock;
+    this.transportStore = transportStore;
     this.time = time;
     this.graph = new PathGraph(FlowPilotMasterData.nodes(), FlowPilotMasterData.edges());
     this.materials = new MaterialServiceImpl(stock, events, ids, work, time);
@@ -122,6 +128,20 @@ public final class FlowPilot {
   public void issue(String materialId, String locationId, int quantity) {
     synchronized (lock) {
       work.inNewTransaction(() -> materials.issue(materialId, locationId, quantity));
+    }
+  }
+
+  /** Every stock line, ordered by material and location. */
+  public List<StockLine> stock() {
+    synchronized (lock) {
+      return stockStore.lines();
+    }
+  }
+
+  /** Transports that are neither delivered nor cancelled, ordered by priority, age and id. */
+  public List<TransportOrder> openTransports() {
+    synchronized (lock) {
+      return transportStore.open();
     }
   }
 

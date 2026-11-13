@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>io.nexus</groupId><artifactId>nexus</artifactId><version>0.1.0-SNAPSHOT</version><relativePath>../../pom.xml</relativePath></parent>
+  <artifactId>nexus-plant</artifactId>
+  <description>The plant: simulation, FlowPilot and SmartFactory wired together with a fixed step. Core module.</description>
+  <dependencies>
+    <dependency><groupId>io.nexus</groupId><artifactId>nexus-contracts</artifactId></dependency>
+    <dependency><groupId>io.nexus</groupId><artifactId>nexus-sim</artifactId></dependency>
+    <dependency><groupId>io.nexus</groupId><artifactId>flowpilot</artifactId></dependency>
+    <dependency><groupId>io.nexus</groupId><artifactId>smartfactory</artifactId></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter-params</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><scope>test</scope></dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId></plugin>
+    </plugins>
+  </build>
+</project>

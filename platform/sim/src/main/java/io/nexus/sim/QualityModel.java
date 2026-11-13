@@ -18,7 +18,11 @@ final class QualityModel {
         + (machine.temperature > MachinePhysics.TEMP_WARN ? 0.07 : 0)
         + (ov > 1.1 ? (ov - 1.1) * 0.25 : 0);
     riskByOrder.put(orderId, riskByOrder.getOrDefault(orderId, 0.0) + add);
+    // orders cancelled before inspection never come back; keep the table bounded (oldest entries go first)
+    while (riskByOrder.size() > MAX_ORDERS) riskByOrder.remove(riskByOrder.keySet().iterator().next());
   }
+
+  static final int MAX_ORDERS = 10_000;
 
   /** The inspection cell judges every part of the batch once; the order's history ends there. */
   int inspect(String orderId, int quantity, SeededRandom random) {
