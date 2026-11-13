@@ -24,8 +24,12 @@ import io.nexus.flowpilot.transport.TransportServiceImpl;
 import java.util.List;
 
 /**
- * Facade of the module. Every public method is synchronized; commands run in units of work of their own.
+ * Facade of the module. Commands run in units of work of their own.
  * The simulation clock is advanced by the caller (the simulation loop), not by step.
+ *
+ * <p>Threading: every method holds the monitor of the event publisher (the EventBus), the same lock SmartFactory
+ * and the bus itself use. One platform-wide lock means one lock order: a thread delivering events into SmartFactory
+ * and a thread calling FlowPilot from SmartFactory can never wait for each other.
  */
 public final class FlowPilot {
   public record VehicleView(String id, String name, AgvStatus status, double x, double z, double heading,
@@ -40,6 +44,7 @@ public final class FlowPilot {
   private final Fleet fleet;
   private final MaterialService materialPort;
   private final TransportService transportPort;
+  private final Object lock;
 
   public static FlowPilot inMemory(EventPublisher events, MemoryUnitOfWork work, SimTime time, IdSource ids) {
     return new FlowPilot(new MemoryStockStore(work), new MemoryTransportStore(work), new MemoryFleetStore(work),
@@ -48,6 +53,7 @@ public final class FlowPilot {
 
   public FlowPilot(StockStore stock, TransportStore transportStore, FleetStore fleetStore, EventPublisher events,
                    UnitOfWork work, SimTime time, IdSource ids) {
+    this.lock = events;
     this.time = time;
     this.graph = new PathGraph(FlowPilotMasterData.nodes(), FlowPilotMasterData.edges());
     this.materials = new MaterialServiceImpl(stock, events, ids, work, time);
@@ -56,28 +62,28 @@ public final class FlowPilot {
     this.fleet = new Fleet(fleetStore, transportStore, materials, graph, events, work, time);
     this.materialPort = new MaterialService() {
       @Override public ReservationResult reserve(ReservationRequest r) {
-        synchronized (FlowPilot.this) { return materials.reserve(r); }
+        synchronized (lock) { return materials.reserve(r); }
       }
       @Override public void release(String requestId) {
-        synchronized (FlowPilot.this) { materials.release(requestId); }
+        synchronized (lock) { materials.release(requestId); }
       }
       @Override public List<Availability> availability(String materialId) {
-        synchronized (FlowPilot.this) { return materials.availability(materialId); }
+        synchronized (lock) { return materials.availability(materialId); }
       }
     };
     this.transportPort = new TransportService() {
       @Override public String requestTransport(TransportRequest r) {
-        synchronized (FlowPilot.this) { return transports.requestTransport(r); }
+        synchronized (lock) { return transports.requestTransport(r); }
       }
       @Override public void cancel(String transportId) {
-        synchronized (FlowPilot.this) {
+        synchronized (lock) {
           fleet.checkCancellable(transportId);
           transports.cancel(transportId);
           fleet.transportChanged(transportId);
         }
       }
       @Override public void redirect(String transportId, Place newTo) {
-        synchronized (FlowPilot.this) {
+        synchronized (lock) {
           transports.redirect(transportId, newTo);
           fleet.transportChanged(transportId);
         }
@@ -98,35 +104,49 @@ public final class FlowPilot {
   }
 
   /** One simulation step: replenishment, dispatch, movement, loading, charging. */
-  public synchronized void step(long dtMs) {
-    replenishment.step(time.nowMs());
-    fleet.step(dtMs);
+  public void step(long dtMs) {
+    synchronized (lock) {
+      replenishment.step(time.nowMs());
+      fleet.step(dtMs);
+    }
   }
 
   /** Goods receipt, e.g. from the REST API. */
-  public synchronized void receive(String materialId, String locationId, int quantity) {
-    work.inNewTransaction(() -> materials.receive(materialId, locationId, quantity));
+  public void receive(String materialId, String locationId, int quantity) {
+    synchronized (lock) {
+      work.inNewTransaction(() -> materials.receive(materialId, locationId, quantity));
+    }
   }
 
-  public synchronized List<VehicleView> vehicles() {
-    return fleet.views();
+  public List<VehicleView> vehicles() {
+    synchronized (lock) {
+      return fleet.views();
+    }
   }
 
-  public synchronized void setAgvEnabled(String agvId, boolean enabled) {
-    fleet.setEnabled(agvId, enabled);
+  public void setAgvEnabled(String agvId, boolean enabled) {
+    synchronized (lock) {
+      fleet.setEnabled(agvId, enabled);
+    }
   }
 
-  public synchronized void sendToCharge(String agvId) {
-    fleet.sendToCharge(agvId);
+  public void sendToCharge(String agvId) {
+    synchronized (lock) {
+      fleet.sendToCharge(agvId);
+    }
   }
 
   /** @param faultTypeId NAV or COMM; null means NAV */
-  public synchronized void injectFault(String agvId, String faultTypeId) {
-    fleet.injectFault(agvId, faultTypeId);
+  public void injectFault(String agvId, String faultTypeId) {
+    synchronized (lock) {
+      fleet.injectFault(agvId, faultTypeId);
+    }
   }
 
-  public synchronized void setEdgeBlocked(String edgeId, boolean blocked) {
-    fleet.setEdgeBlocked(edgeId, blocked);
+  public void setEdgeBlocked(String edgeId, boolean blocked) {
+    synchronized (lock) {
+      fleet.setEdgeBlocked(edgeId, blocked);
+    }
   }
 
   public PathGraph graph() {

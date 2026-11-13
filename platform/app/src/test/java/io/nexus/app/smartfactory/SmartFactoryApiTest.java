@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
@@ -33,8 +34,9 @@ import org.springframework.test.context.ActiveProfiles;
 class SmartFactoryApiTest {
   @TestConfiguration
   static class Ports {
-    @Bean FakeMaterialService materialService() { return new FakeMaterialService(); }
-    @Bean FakeTransportService transportService(EventPublisher events) { return new FakeTransportService(events); }
+    // @Primary: with FlowPilot in the context, SmartFactory must still talk to the fakes in this test
+    @Bean @Primary FakeMaterialService fakeMaterialService() { return new FakeMaterialService(); }
+    @Bean @Primary FakeTransportService fakeTransportService(EventPublisher events) { return new FakeTransportService(events); }
     @Bean FakeMachineControl machineControl() { return new FakeMachineControl(); }
   }
 

@@ -3,6 +3,7 @@ package io.nexus.app.flowpilot;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.nexus.contracts.event.EventPublisher;
+import io.nexus.contracts.event.NexusEvent;
 import io.nexus.contracts.event.UnitOfWork;
 import io.nexus.contracts.port.IdSource;
 import io.nexus.contracts.port.MaterialService.Line;
@@ -30,7 +31,6 @@ import org.springframework.test.context.ActiveProfiles;
 @ActiveProfiles("embedded")
 class ConcurrentReservationTest {
   @Autowired StockStore stock;
-  @Autowired EventPublisher events;
   @Autowired IdSource ids;
   @Autowired UnitOfWork work;
   @Autowired SimTime time;
@@ -43,6 +43,11 @@ class ConcurrentReservationTest {
 
   @Test
   void fiftyThreadsReserveThirtyUnitsWithoutOverbooking() throws Exception {
+    // Deliberately bypasses the facade's lock, so 50 threads really meet in PostgreSQL. Events are only recorded:
+    // delivering them needs a second connection per thread, which 50 unlocked threads would take from a pool of 20.
+    // In the application every caller goes through the locked facade (see CrossModuleLockingTest).
+    EventPublisher events = (type, source, severity, correlationId, payload) ->
+        new NexusEvent("test", time.nowMs(), type, source, severity, correlationId, payload);
     var materials = new MaterialServiceImpl(stock, events, ids, work, time);
     var start = new CountDownLatch(1);
     ExecutorService pool = Executors.newFixedThreadPool(50);
