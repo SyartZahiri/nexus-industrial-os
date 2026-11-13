@@ -61,6 +61,20 @@
               </arguments>
             </configuration>
           </execution>
+          <execution>
+            <id>plant-js-equals-jvm</id>
+            <goals><goal>exec</goal></goals>
+            <phase>verify</phase>
+            <configuration>
+              <skip>${skipTests}</skip>
+              <executable>node</executable>
+              <arguments>
+                <argument>${project.basedir}/src/test/js/plant-run.mjs</argument>
+                <argument>${project.build.directory}/javascript/nexus-core.js</argument>
+                <argument>${project.build.directory}/plant-jvm.txt</argument>
+              </arguments>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
     </plugins>

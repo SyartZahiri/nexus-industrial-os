@@ -13,6 +13,11 @@ import io.nexus.contracts.memory.MemoryUnitOfWork;
 import io.nexus.contracts.sim.SeededRandom;
 import io.nexus.contracts.sim.SimTime;
 import io.nexus.flowpilot.FlowPilotSelfTest;
+import io.nexus.plant.Plant;
+import io.nexus.plant.PlantCommands;
+import io.nexus.plant.PlantJson;
+import io.nexus.plant.PlantRules;
+import io.nexus.plant.Scenario1h;
 import io.nexus.smartfactory.SmartFactorySelfTest;
 import java.util.ArrayList;
 import java.util.List;
@@ -77,6 +82,56 @@ public final class WebRuntime {
     lines.add("flowpilot=" + oneLine(FlowPilotSelfTest.run(seed)));
     lines.add("smartfactory=" + oneLine(SmartFactorySelfTest.run(seed)));
     return String.join("\n", lines);
+  }
+
+  /* ------------------------------------------------------------------ the plant for the web worker */
+
+  /** The worker holds exactly one plant per module instance. */
+  private static Plant plant;
+
+  /** Starts a fresh plant with the production rules. */
+  @JSExport
+  public static void plantStart(int seed) {
+    plant = Plant.inMemory(seed, PlantRules.DEFAULT);
+  }
+
+  /** Runs whole simulation steps for at least simMs; returns the number of steps. */
+  @JSExport
+  public static int plantAdvance(double simMs) {
+    return running().advance((long) simMs);
+  }
+
+  @JSExport
+  public static String plantFrame() {
+    return PlantJson.frame(running().frame());
+  }
+
+  /** Events after the given event id, or all events of the run for null or "". */
+  @JSExport
+  public static String plantEvents(String afterEventId) {
+    List<NexusEvent> all = running().events();
+    int from = 0;
+    if (afterEventId != null && !afterEventId.isEmpty()) {
+      for (int i = 0; i < all.size(); i++) if (all.get(i).eventId().equals(afterEventId)) from = i + 1;
+    }
+    return PlantJson.events(all.subList(from, all.size()));
+  }
+
+  /** A command as JSON (see PlantCommands); the answer is JSON too. */
+  @JSExport
+  public static String plantCommand(String json) {
+    return PlantCommands.apply(running(), json);
+  }
+
+  /** The scripted hour the build compares with the JVM and the server. */
+  @JSExport
+  public static String plantScenario1h(int seed) {
+    return Scenario1h.run(Plant.inMemory(seed, Scenario1h.rules()));
+  }
+
+  private static Plant running() {
+    if (plant == null) plantStart(4711);
+    return plant;
   }
 
   private static String oneLine(String text) {

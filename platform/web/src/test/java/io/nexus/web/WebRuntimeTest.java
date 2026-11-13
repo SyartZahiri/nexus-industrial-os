@@ -28,6 +28,9 @@ class WebRuntimeTest {
     assertThat(WebRuntime.selfTest(4711)).as("same seed, same output").isEqualTo(out);
     assertThat(WebRuntime.selfTest(4712)).isNotEqualTo(out);
 
+    // plant-run.mjs compares the JavaScript build's hour of plant life against exactly this text
+    Files.writeString(Path.of("target", "plant-jvm.txt"),
+        io.nexus.plant.Scenario1h.run(io.nexus.plant.Plant.inMemory(4711, io.nexus.plant.Scenario1h.rules())));
     // smoke.mjs compares the JavaScript build against exactly this text
     Files.writeString(Path.of("target", "selftest-jvm.txt"), out);
   }
