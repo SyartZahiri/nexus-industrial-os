@@ -69,6 +69,11 @@ public final class Replenishment {
     return sum;
   }
 
+  /** For a reset: deliveries under way belong to the old run. */
+  public void reset() {
+    pending.clear();
+  }
+
   private void deliver(long nowMs) {
     for (Iterator<Delivery> it = pending.iterator(); it.hasNext(); ) {
       Delivery d = it.next();

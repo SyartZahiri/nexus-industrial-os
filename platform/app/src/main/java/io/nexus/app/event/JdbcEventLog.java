@@ -14,7 +14,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /** EventLog on PostgreSQL. Payload records are stored as JSON and read back by the type registered for the event. */
 @Component
-class JdbcEventLog implements EventLog {
+public class JdbcEventLog implements EventLog {
   private static final String EVENT_COLUMNS =
       "e.event_id, e.sim_time_ms, e.type, e.source, e.severity, e.correlation_id, e.payload::text as payload";
 
@@ -89,6 +89,12 @@ class JdbcEventLog implements EventLog {
   public Optional<NexusEvent> find(String eventId) {
     return jdbc.sql("select " + EVENT_COLUMNS + " from event e where e.event_id = :id").param("id", eventId)
         .query((rs, i) -> event(rs)).optional();
+  }
+
+  /** Every event of a run in publish order: the server's counterpart of the in-memory plant's events(). */
+  public List<NexusEvent> eventsOfRun(long runId) {
+    return jdbc.sql("select " + EVENT_COLUMNS + " from event e where e.run_id = :run order by e.seq")
+        .param("run", runId).query((rs, i) -> event(rs)).list();
   }
 
   private NexusEvent event(ResultSet rs) throws SQLException {

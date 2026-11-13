@@ -11,6 +11,7 @@ import io.nexus.contracts.memory.MemoryEventLog;
 import io.nexus.contracts.memory.MemoryIdSource;
 import io.nexus.contracts.memory.MemoryUnitOfWork;
 import io.nexus.contracts.port.MachineControl;
+import io.nexus.contracts.port.MachineControl.MachineJob;
 import io.nexus.contracts.sim.SeededRandom;
 import io.nexus.contracts.sim.SimTime;
 import io.nexus.flowpilot.FlowPilot;
@@ -47,8 +48,8 @@ public final class Plant {
   private final SimTime time;
   private final FlowPilot flowPilot;
   private final SmartFactory smartFactory;
-  private final Simulation simulation;
-  private final OrderGenerator orders;
+  private Simulation simulation;
+  private OrderGenerator orders;
   private final Shipping shipping = new Shipping();
   private final MemoryEventLog memoryLog;
   private PlantRules rules;
@@ -166,6 +167,22 @@ public final class Plant {
     }
   }
 
+  /**
+   * Starts the plant afresh with a new seed: new machines (cold, unworn), new order generator, the current rules
+   * applied as at construction. The caller has already reset stores, clock, id counters, event run, bus, FlowPilot
+   * and SmartFactory; afterwards the plant behaves exactly like a new one built with this seed.
+   */
+  public void reset(long seed) {
+    synchronized (bus) {
+      var random = new SeededRandom(seed);
+      simulation = simulationFor(random, smartFactory);
+      orders = new OrderGenerator(random.fork("orders"));
+      PlantRules current = rules;
+      rules = null;
+      applyRules(current);
+    }
+  }
+
   public void setRules(PlantRules rules) {
     synchronized (bus) {
       applyRules(rules);
@@ -204,8 +221,16 @@ public final class Plant {
     return simulation;
   }
 
+  /** The machines as SmartFactory commands them; follows a reset, unlike a reference to simulation(). */
   public MachineControl machineControl() {
-    return simulation;
+    return new MachineControl() {
+      @Override public void start(String machineId) { simulation.start(machineId); }
+      @Override public void stop(String machineId) { simulation.stop(machineId); }
+      @Override public void injectFault(String machineId, String faultTypeId) { simulation.injectFault(machineId, faultTypeId); }
+      @Override public void repair(String machineId) { simulation.repair(machineId); }
+      @Override public void maintain(String machineId) { simulation.maintain(machineId); }
+      @Override public void startJob(MachineJob job) { simulation.startJob(job); }
+    };
   }
 
   public long nowMs() {

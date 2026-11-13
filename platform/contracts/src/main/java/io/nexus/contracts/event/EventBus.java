@@ -87,6 +87,12 @@ public final class EventBus implements EventPublisher {
     return event;
   }
 
+  /** For a reset of the simulation: forgets queued deliveries; registered consumers stay. */
+  public synchronized void reset() {
+    queue.clear();
+    draining = false;
+  }
+
   /** Delivers a stored event again; consumers that already processed it are skipped. */
   public void redeliver(String eventId) {
     NexusEvent event = log.find(eventId).orElseThrow(() -> DomainException.notFound("Ereignis", eventId));
