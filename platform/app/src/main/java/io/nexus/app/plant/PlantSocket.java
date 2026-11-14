@@ -43,6 +43,11 @@ public class PlantSocket extends TextWebSocketHandler {
   public static final int MAX_CLIENTS = 50;
   private static final long FRAME_REFRESH_MS = 1_000;
   private static final long SEND_TIMEOUT_MS = 2_000;
+  /**
+   * Distinguishes this server process: the embedded database starts its run numbers at 1 again after a restart, so a
+   * run id alone would let a reconnecting client take a new run for the one it knew.
+   */
+  private static final String BOOT = Long.toHexString(new java.security.SecureRandom().nextLong());
 
   private final Plant plant;
   private final JdbcEventLog events;
@@ -108,10 +113,21 @@ public class PlantSocket extends TextWebSocketHandler {
           sentSeq = events.lastSeq(sentRun);
         }
       }
+      // the newcomer first learns which run it is in; after a reconnect it compares with the run it knew
+      String hello;
+      synchronized (bus) {
+        hello = new JsonWriter().beginObject().name("type").value("hello").name("run").value(runKey(run.id()))
+            .name("seed").value(run.seed()).endObject().toString();
+      }
+      session.sendMessage(new TextMessage(hello));
       clients.put(session.getId(), new ConcurrentWebSocketSessionDecorator(session, (int) SEND_TIMEOUT_MS, 1_048_576));
       sentFrame = null;          // the newcomer needs a frame and the simulation state now
       sentSim = null;
     }
+  }
+
+  private static String runKey(long runId) {
+    return BOOT + ":" + runId;
   }
 
   @Override
@@ -139,8 +155,8 @@ public class PlantSocket extends TextWebSocketHandler {
     synchronized (bus) {
       long currentRun = run.id();
       if (currentRun != sentRun) {
-        reset = new JsonWriter().beginObject().name("type").value("reset").name("seed").value(run.seed())
-            .endObject().toString();
+        reset = new JsonWriter().beginObject().name("type").value("reset").name("run").value(runKey(currentRun))
+            .name("seed").value(run.seed()).endObject().toString();
         sentRun = currentRun;
         sentSeq = 0;
         sentFrame = null;

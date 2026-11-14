@@ -142,13 +142,15 @@ function client(): NexusClient {
 
 /** Sends a command; if the plant refuses it, its reason becomes the notice and the result is false. */
 export async function send(c: Command): Promise<boolean> {
-  if (c.command === 'machineConfigure' && typeof c.machineId === 'string') {
-    twin.setConfig(c.machineId, { override: Number(c.override), coolant: Boolean(c.coolant) });
-  }
   const answer = await client().command(c);
   if (!answer.ok) {
     useFactory.setState({ notice: answer.message });
     return false;
+  }
+  // the frame does not carry override and coolant: remember what the plant accepted
+  if (c.command === 'machineConfigure' && typeof c.machineId === 'string') {
+    twin.setConfig(c.machineId, { override: Number(c.override), coolant: Boolean(c.coolant) });
+    useFactory.setState({ scene: twin.scene });
   }
   useFactory.setState({ notice: null });
   return true;

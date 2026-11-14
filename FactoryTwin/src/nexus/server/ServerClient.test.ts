@@ -19,7 +19,9 @@ class FakeSocket {
   drop() {
     this.onclose?.();
   }
-  close() {}
+  close() {
+    this.onclose?.();
+  }
 }
 
 const event = (seq: number): NexusEvent => ({
@@ -71,11 +73,13 @@ describe('ServerClient', () => {
   it('aReconnectFillsTheGapWithoutDuplicates', async () => {
     const { seen, socket, timers, fetch } = setup([event(3), event(4)]);
     socket().open();
+    socket().receive({ type: 'hello', run: 'A:1', seed: 7 });
     socket().receive({ type: 'events', items: [event(1), event(2)] });
     socket().drop();
     expect(seen.at(-1)).toEqual({ type: 'connection', state: 'closed' });
     timers.shift()!(); // backoff over: reconnect
     socket().open();
+    socket().receive({ type: 'hello', run: 'A:1', seed: 7 });
     await vi.waitFor(() => expect(seqs(seen)).toEqual([1, 2, 3, 4]));
     expect(fetch).toHaveBeenCalledWith('http://host:5173/api/v1/events?after=2&limit=1000', expect.anything());
     socket().receive({ type: 'events', items: [event(4), event(5)] });
@@ -89,6 +93,52 @@ describe('ServerClient', () => {
     socket().receive({ type: 'reset', seed: 9 });
     socket().receive({ type: 'events', items: [event(1)] });
     expect(seqs(seen)).toEqual([1, 2, 1]);
+  });
+
+  it('aReconnectToADifferentRunStartsOver', () => {
+    const { seen, socket, timers, fetch } = setup([event(3)]);
+    socket().open();
+    socket().receive({ type: 'hello', run: 'A:1', seed: 7 });
+    socket().receive({ type: 'events', items: [event(1), event(2)] });
+    socket().drop();
+    timers.shift()!();
+    socket().open();
+    socket().receive({ type: 'hello', run: 'B:1', seed: 7 }); // the server restarted: its new run counts from 1
+    socket().receive({ type: 'events', items: [event(1)] });
+    expect(seen.filter((m) => m.type === 'reset')).toEqual([{ type: 'reset', seed: 7 }]);
+    expect(seqs(seen)).toEqual([1, 2, 1]);
+    expect(fetch.mock.calls.some(([url]) => String(url).includes('/events'))).toBe(false);
+  });
+
+  it('aFailedGapFillReconnectsInsteadOfSkippingTheGap', async () => {
+    const { seen, socket, timers, fetch } = setup([event(3), event(4)]);
+    socket().open();
+    socket().receive({ type: 'hello', run: 'A:1', seed: 7 });
+    socket().receive({ type: 'events', items: [event(1)] });
+    socket().drop();
+    timers.shift()!();
+    fetch.mockRejectedValueOnce(new Error('offline'));
+    socket().open();
+    socket().receive({ type: 'hello', run: 'A:1', seed: 7 });
+    socket().receive({ type: 'events', items: [event(4)] }); // arrives while the gap is being fetched
+    await vi.waitFor(() => expect(timers).toHaveLength(1)); // the client gave up this connection
+    expect(seqs(seen)).toEqual([1]); // 4 was not passed on over the gap
+    timers.shift()!();
+    socket().open();
+    socket().receive({ type: 'hello', run: 'A:1', seed: 7 });
+    await vi.waitFor(() => expect(seqs(seen)).toEqual([1, 3, 4]));
+  });
+
+  it('anErrorWithoutTheCoresFormatStillReachesTheUser', async () => {
+    const { client, fetch } = setup();
+    fetch.mockResolvedValueOnce(
+      new Response('{"status":403,"title":"Forbidden","detail":"Fremde Seite"}', { status: 403 }),
+    );
+    await expect(client.command({ command: 'machineStop', machineId: 'CNC-01' })).resolves.toEqual({
+      ok: false,
+      status: 403,
+      message: 'Fremde Seite',
+    });
   });
 
   it('passes a refused command through with its status', async () => {

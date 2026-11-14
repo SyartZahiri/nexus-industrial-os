@@ -51,6 +51,13 @@ describe('factoryStore', () => {
     expect(useFactory.getState().notice).toContain('CNC-01');
   });
 
+  it('keeps machine settings until the plant accepts them', async () => {
+    const { client } = fakeClient({ ok: false, status: 400, message: 'Override muss zwischen 50 und 130 % liegen' });
+    startNexus(client);
+    await send({ command: 'machineConfigure', machineId: 'CNC-04', override: 200, coolant: false });
+    expect(twin.configs['CNC-04']).toBeUndefined();
+  });
+
   it('forgets the old run on reset', () => {
     const { client, push } = fakeClient({ ok: true, result: null });
     startNexus(client);

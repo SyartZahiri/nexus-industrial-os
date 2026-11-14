@@ -7,6 +7,12 @@ interface Deps {
   setTimeout: typeof setTimeout;
 }
 
+/** The server greets each connection with its run; a reset names the new one. */
+type Incoming =
+  | Exclude<NexusMessage, { type: 'reset' }>
+  | { type: 'hello'; run: string; seed: number }
+  | { type: 'reset'; seed: number; run?: string };
+
 const PAGE = 1000;
 const MAX_BACKOFF_MS = 30_000;
 
@@ -21,6 +27,8 @@ export class ServerClient implements NexusClient {
   private socket: WebSocket | null = null;
   private listener: (m: NexusMessage) => void = () => {};
   private lastSeq = 0;
+  /** Server process and run the events so far belong to; null before the first greeting. */
+  private runKey: string | null = null;
   private backoffMs = 1_000;
   private stopped = false;
   private filling = false;
@@ -52,9 +60,8 @@ export class ServerClient implements NexusClient {
     socket.onopen = () => {
       this.backoffMs = 1_000;
       this.listener({ type: 'connection', state: 'open' });
-      if (this.lastSeq > 0) void this.fillGap();
     };
-    socket.onmessage = (e: MessageEvent<string>) => this.receive(JSON.parse(e.data) as NexusMessage);
+    socket.onmessage = (e: MessageEvent<string>) => this.receive(JSON.parse(e.data) as Incoming);
     socket.onclose = () => {
       this.listener({ type: 'connection', state: 'closed' });
       if (this.stopped) return;
@@ -64,17 +71,28 @@ export class ServerClient implements NexusClient {
     };
   }
 
-  private receive(m: NexusMessage): void {
-    if (m.type === 'reset') {
-      this.lastSeq = 0;
-      this.held = [];
-      this.listener(m);
+  private receive(m: Incoming): void {
+    if (m.type === 'hello') {
+      // a reconnect to a different run (server restarted, or reset while we were away) starts over;
+      // to the same run, the events missed while away are fetched first
+      if (this.runKey !== null && this.runKey !== m.run) this.startOver(m.seed);
+      else if (this.runKey === m.run && this.lastSeq > 0) void this.fillGap();
+      this.runKey = m.run;
+    } else if (m.type === 'reset') {
+      if (m.run !== undefined) this.runKey = m.run;
+      this.startOver(m.seed);
     } else if (m.type === 'events') {
       if (this.filling) this.held.push(...m.items);
       else this.pass(m.items);
     } else {
       this.listener(m);
     }
+  }
+
+  private startOver(seed: number): void {
+    this.lastSeq = 0;
+    this.held = [];
+    this.listener({ type: 'reset', seed });
   }
 
   /** Passes on events in seq order, each once. */
@@ -88,6 +106,7 @@ export class ServerClient implements NexusClient {
   /** Events missed while the socket was closed; new ones from the socket wait until the gap is filled. */
   private async fillGap(): Promise<void> {
     this.filling = true;
+    let filled = false;
     try {
       for (;;) {
         const r = await this.deps.fetch(`${this.base}/api/v1/events?after=${this.lastSeq}&limit=${PAGE}`, {
@@ -96,15 +115,21 @@ export class ServerClient implements NexusClient {
         if (!r.ok) break;
         const page = (await r.json()) as NexusEvent[];
         this.pass(page);
-        if (page.length < PAGE) break;
+        if (page.length < PAGE) {
+          filled = true;
+          break;
+        }
       }
     } catch {
-      // the next reconnect tries again
+      // handled below: the gap stays open
     } finally {
       this.filling = false;
       const held = this.held;
       this.held = [];
-      this.pass(held);
+      // Passing the held events over an unfilled gap would move lastSeq past it for good. Instead this connection is
+      // dropped: the reconnect greets again and the gap is fetched once more.
+      if (filled) this.pass(held);
+      else this.socket?.close();
     }
   }
 
@@ -115,7 +140,10 @@ export class ServerClient implements NexusClient {
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(body),
       });
-      return (await r.json()) as Answer;
+      const answer = (await r.json().catch(() => ({}))) as Partial<Answer> & { detail?: string };
+      if (typeof answer.ok === 'boolean') return answer as Answer;
+      // not the core's answer (a filter, a proxy or Spring refused it): still a refusal the user must see
+      return { ok: false, status: r.status, message: answer.detail ?? `Fehler ${r.status}` };
     } catch {
       return { ok: false, status: 0, message: 'Server nicht erreichbar' };
     }

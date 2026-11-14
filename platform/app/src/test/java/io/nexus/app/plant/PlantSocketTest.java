@@ -129,6 +129,20 @@ class PlantSocketTest {
     client.session.close();
   }
 
+  /** Final review: a client that reconnects must learn whether the run is still the one it knew. */
+  @Test
+  void aNewClientIsGreetedWithItsRunAndAResetNamesTheNewOne() throws Exception {
+    var client = new Client().connect(null);
+    var hello = client.messages.poll(10, TimeUnit.SECONDS);
+    assertThat(hello).containsEntry("type", "hello").containsEntry("seed", 5L);
+    String run = (String) hello.get("run");
+    assertThat(run).isNotBlank();
+    reset.reset(99);
+    var announced = client.next("reset");
+    assertThat(announced.get("run")).isNotEqualTo(run);
+    client.session.close();
+  }
+
   @Test
   void resetIsAnnounced() throws Exception {
     var client = new Client().connect(null);
