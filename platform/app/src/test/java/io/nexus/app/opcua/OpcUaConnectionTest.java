@@ -63,6 +63,50 @@ class OpcUaConnectionTest {
     }
   }
 
+  private static void sleep(long ms) {
+    try {
+      Thread.sleep(ms);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new AssertionError(e);
+    }
+  }
+
+  /** Final review, Important 2: a reset during an outage works as soon as the server is back, without a step. */
+  @Test
+  void aResetWorksAsSoonAsTheServerIsBack() {
+    server.stop();
+    stepUntil(() -> inSmartFactory("CNC-01") == MachineStatus.UNKNOWN);
+    server.start();
+    long deadline = System.currentTimeMillis() + 20_000;
+    while (true) {
+      try {
+        reset.reset(5);
+        break;
+      } catch (DomainException stillGone) {
+        assertThat(System.currentTimeMillis()).as("reset kept failing for 20 s").isLessThan(deadline);
+        sleep(200);
+      }
+    }
+    assertThat(plant.smartFactory().machines()).allSatisfy(m -> assertThat(m.status()).isEqualTo(MachineStatus.IDLE));
+    plant.advance(1_000);
+    assertThat(plant.smartFactory().machines()).noneMatch(m -> m.status() == MachineStatus.UNKNOWN);
+  }
+
+  /** Security review: a machine whose values are bad when the connection returns stays UNKNOWN until they are good. */
+  @Test
+  void aMachineWithBadValuesAtReconnectStaysUnknownUntilTheyAreGood() {
+    plant.advance(1_000);
+    server.stop();
+    stepUntil(() -> inSmartFactory("CNC-01") == MachineStatus.UNKNOWN);
+    server.start();
+    server.override("Machines/CNC-01/Temperature", new DataValue(Variant.ofDouble(Double.NaN)));
+    stepUntil(() -> inSmartFactory("CNC-02") != MachineStatus.UNKNOWN);
+    assertThat(inSmartFactory("CNC-01")).as("no trustworthy state yet").isEqualTo(MachineStatus.UNKNOWN);
+    plant.advance(100);
+    assertThat(inSmartFactory("CNC-01")).isNotEqualTo(MachineStatus.UNKNOWN);
+  }
+
   private MachineStatus inSmartFactory(String machineId) {
     return plant.smartFactory().machines().stream().filter(m -> m.id().equals(machineId)).findFirst().orElseThrow()
         .status();

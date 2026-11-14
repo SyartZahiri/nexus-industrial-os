@@ -75,6 +75,8 @@ public final class OpcUaMachines implements MachineGateway {
   private final Map<String, Simulation.MachineView> views = new TreeMap<>();
   private final Map<String, Simulation.ConveyorView> conveyors = new TreeMap<>();
   private final Set<String> warned = new TreeSet<>();
+  /** Machines whose values the last read accepted: only these may leave UNKNOWN. */
+  private final Set<String> fresh = new TreeSet<>();
   private volatile boolean sessionActive = true;
   private boolean reachable = true;
   private boolean suspect;
@@ -193,8 +195,19 @@ public final class OpcUaMachines implements MachineGateway {
 
   // ---- MachineGateway ---------------------------------------------------------------------------------------
 
+  /**
+   * A reset starts over: if the session is back, it does not wait for a step to reconnect, and an answer lost in
+   * the old run no longer matters. The machines are new afterwards, so nothing has to be resynchronised.
+   */
   @Override
   public void reset(long seed) {
+    if ((!reachable || suspect) && sessionActive) {
+      pending = null;
+      reachable = true;
+      suspect = false;
+      backoffMs = 1_000;
+      log.info("OPC UA wieder verbunden (Reset)");
+    }
     call("Reset", Variant.ofInt64(seed));
     for (String id : machineIds) known.put(id, MachineStatus.IDLE);
     views.clear();
@@ -209,7 +222,16 @@ public final class OpcUaMachines implements MachineGateway {
   public void step(long dtMs) {
     if (reachable && (suspect || !sessionActive)) lost();
     if (!reachable && sessionActive && System.currentTimeMillis() >= retryAt) regain();
-    if (reachable) call("Step", Variant.ofInt64(dtMs));
+    if (reachable && !suspect && known.containsValue(MachineStatus.UNKNOWN)) {
+      try {
+        readValues();
+      } catch (RuntimeException unanswered) {
+        suspect = true;
+        return;
+      }
+      resyncUnknown();
+    }
+    if (reachable && !suspect) call("Step", Variant.ofInt64(dtMs));
   }
 
   /** All machines count as UNKNOWN: SmartFactory plans around them and gives them nothing. */
@@ -217,12 +239,37 @@ public final class OpcUaMachines implements MachineGateway {
     reachable = false;
     retryAt = System.currentTimeMillis() + backoffMs;
     connection(Severity.ERROR, "OPC UA getrennt, Maschinen gelten als unbekannt");
+    RuntimeException failure = null;
     for (String id : machineIds) {
       MachineStatus before = known.get(id);
       if (before == MachineStatus.UNKNOWN) continue;
       known.put(id, MachineStatus.UNKNOWN);
-      target.statusChanged(id, before, MachineStatus.UNKNOWN);
+      failure = announce(id, before, MachineStatus.UNKNOWN, failure);
     }
+    if (failure != null) throw failure;
+  }
+
+  /** Tells SmartFactory one machine's state; a failure is collected, so every other machine still hears of it. */
+  private RuntimeException announce(String id, MachineStatus from, MachineStatus to, RuntimeException failure) {
+    try {
+      target.statusChanged(id, from, to);
+    } catch (RuntimeException notTaken) {
+      if (failure == null) return notTaken;
+      failure.addSuppressed(notTaken);
+    }
+    return failure;
+  }
+
+  /** Machines still UNKNOWN whose values were just read and are valid get their real state back. */
+  private void resyncUnknown() {
+    RuntimeException failure = null;
+    for (String id : machineIds) {
+      if (known.get(id) != MachineStatus.UNKNOWN || !fresh.contains(id)) continue;
+      MachineStatus now = views.get(id).status();
+      known.put(id, now);
+      failure = announce(id, MachineStatus.UNKNOWN, now, failure);
+    }
+    if (failure != null) throw failure;
   }
 
   /**
@@ -240,6 +287,8 @@ public final class OpcUaMachines implements MachineGateway {
     } catch (RuntimeException stillGone) {
       backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
       retryAt = System.currentTimeMillis() + backoffMs;
+      log.info("OPC UA: Wiederverbinden fehlgeschlagen ({}), nächster Versuch in {} ms", stillGone.getMessage(),
+          backoffMs);
       return;
     }
     String replayedMethod = pending == null ? null : pending.method();
@@ -256,12 +305,7 @@ public final class OpcUaMachines implements MachineGateway {
             List.of(), replayedMethod + " nach Verbindungsverlust abgelehnt: " + refused.getMessage()));
       }
     }
-    for (String id : machineIds) {
-      if (known.get(id) != MachineStatus.UNKNOWN) continue;
-      MachineStatus now = views.containsKey(id) ? views.get(id).status() : MachineStatus.IDLE;
-      known.put(id, now);
-      target.statusChanged(id, MachineStatus.UNKNOWN, now);
-    }
+    resyncUnknown();     // a machine with bad values stays UNKNOWN; the next steps try again
   }
 
   private void connection(Severity severity, String message) {
@@ -345,11 +389,13 @@ public final class OpcUaMachines implements MachineGateway {
       throw new IllegalStateException("OPC UA: Werte nicht lesbar", e);
     }
     int i = 0;
+    fresh.clear();
     for (String id : machineIds) {
       int n = MachineNamespace.MACHINE_VALUES.size();
       Simulation.MachineView view = machineView(id, values.subList(i, i + n));
       i += n;
       keepIfValid(id, view, views);
+      if (view != null) fresh.add(id);
     }
     for (String id : conveyorIds) {
       int n = MachineNamespace.CONVEYOR_VALUES.size();
