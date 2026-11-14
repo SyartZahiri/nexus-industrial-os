@@ -2,8 +2,8 @@ import { RoundedBox } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import type { Machine, MachineStatus } from '../sim/types';
-import { engine } from '../store/factoryStore';
+import type { MachineStatus, SceneMachine as Machine } from '../twin/types';
+import { plant } from '../store/factoryStore';
 import { STATUS_COLOR } from '../ui/format';
 import { Selectable, StackLight, useAnimClock, type LampState } from './common';
 import { ledMaterial, MAT } from './materials';
@@ -17,8 +17,8 @@ const lamps = (st: MachineStatus): [LampState, LampState, LampState, LampState] 
 ];
 
 function useMachine(id: string) {
-  const idx = engine.state.machines.findIndex((m) => m.id === id);
-  return () => engine.state.machines[idx] ?? engine.machine(id)!;
+  const idx = plant.state.machines.findIndex((m) => m.id === id);
+  return () => plant.state.machines[idx] ?? plant.machine(id)!;
 }
 
 const color = new THREE.Color();
@@ -55,7 +55,7 @@ export function CncMachine({ id }: { id: string }) {
       spindle.current.position.z = THREE.MathUtils.damp(spindle.current.position.z, tz, 5, dt);
       spindle.current.position.y = THREE.MathUtils.damp(spindle.current.position.y, ty, 3, dt);
     }
-    if (tool.current) tool.current.rotation.y += dt * (m.sensors.spindle / 60) * 0.6 * (engine.state.running ? 1 : 0);
+    if (tool.current) tool.current.rotation.y += dt * (m.sensors.spindle / 60) * 0.6 * (plant.state.running ? 1 : 0);
   });
 
   return (
@@ -318,7 +318,7 @@ export function RobotCell({ id }: { id: string }) {
     if (fingerA.current) fingerA.current.position.z = THREE.MathUtils.damp(fingerA.current.position.z, open, 12, dt);
     if (fingerB.current) fingerB.current.position.z = THREE.MathUtils.damp(fingerB.current.position.z, -open, 12, dt);
     if (tip.current) tip.current.getWorldPosition(robotTips.get(id)!);
-    const flicker = working && m.status === 'RUNNING' && engine.state.running ? 0.6 + Math.random() * 2.4 : 0;
+    const flicker = working && m.status === 'RUNNING' && plant.state.running ? 0.6 + Math.random() * 2.4 : 0;
     sparkMat.emissiveIntensity = flicker * 2;
     if (spark.current) spark.current.intensity = flicker * 1.2;
   });
@@ -455,7 +455,7 @@ export function QcStation({ id }: { id: string }) {
     curtain.emissive.set(m.status === 'FAULT' ? '#ef4444' : '#38bdf8');
     scanLine.emissiveIntensity = running ? 3 : 0;
     const v = m.lastVerdict;
-    const age = v ? engine.state.time - v.at : 99;
+    const age = v ? plant.state.time - v.at : 99;
     if (v && age < 6) {
       color.set(v.ok ? '#22c55e' : '#ef4444');
       verdict.emissive.copy(color);
@@ -528,7 +528,7 @@ export function QcStation({ id }: { id: string }) {
 function ScrapBin() {
   const fill = useRef<THREE.Mesh>(null);
   useFrame(() => {
-    const n = engine.state.inventory.scrap;
+    const n = plant.state.inventory.scrap;
     const h = Math.min(0.7, 0.04 + n * 0.02);
     if (fill.current) {
       fill.current.scale.y = h;

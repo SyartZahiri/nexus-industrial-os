@@ -1,9 +1,9 @@
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { PRODUCT_IDS, PRODUCTS } from '../sim/config';
-import type { ProductId, Workpiece } from '../sim/types';
-import { engine } from '../store/factoryStore';
+import { PRODUCT_IDS, PRODUCTS } from '../twin/config';
+import type { ProductId, Workpiece } from '../twin/types';
+import { plant } from '../store/factoryStore';
 import { QC_SPAN } from './Machines';
 import { finishedMaterial, WP_MAT } from './materials';
 import { BELT_TOP, ROBOT_CELL, robotPhase, robotTips } from './runtime';
@@ -44,7 +44,7 @@ export function Workpieces() {
   const counts = useMemo(() => ({}) as Record<string, number>, []);
 
   useFrame(() => {
-    const s = engine.state;
+    const s = plant.state;
     for (const k of Object.keys(counts)) counts[k] = 0;
     const put = (wp: Workpiece, x: number, y: number, z: number, ry = 0, spinX = 0) => {
       const routing = PRODUCTS[wp.product].routing;
@@ -94,7 +94,7 @@ export function Workpieces() {
         const { phase } = robotPhase(m);
         const tipPos = robotTips.get(m.id);
         if (phase === 'pick' && m.status !== 'BLOCKED') {
-          const cv = engine.conveyor(m.input.type === 'conveyor' ? m.input.conveyorId : '')!;
+          const cv = plant.conveyor(m.input.type === 'conveyor' ? m.input.conveyorId : '')!;
           const tipNear = tipPos && Math.hypot(tipPos.x - (bx + ROBOT_CELL.pick.x), tipPos.z - (bz + ROBOT_CELL.pick.z)) < 0.12 && tipPos.y < 1.3;
           if (tipNear && tipPos) put(wp, tipPos.x, tipPos.y - g.half, tipPos.z);
           else put(wp, cv.end.x, BELT_TOP + g.half, cv.end.z);

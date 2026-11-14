@@ -2,7 +2,7 @@ import { Environment, Lightformer } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import { lazy, Suspense } from 'react';
 import * as THREE from 'three';
-import { engine, useFactory } from '../store/factoryStore';
+import { plant, useFactory } from '../store/factoryStore';
 import { Hall } from './Hall';
 import { AgvFleet, Chargers, ConveyorModel, Warehouse } from './Logistics';
 import { CncMachine, QcStation, RobotCell } from './Machines';
@@ -67,10 +67,10 @@ export function FactoryScene() {
       )}
       <Suspense fallback={null}>
         <Hall />
-        {engine.state.machines.map((m) =>
+        {plant.state.machines.map((m) =>
           m.kind === 'cnc' ? <CncMachine key={m.id} id={m.id} /> : m.kind === 'robot' ? <RobotCell key={m.id} id={m.id} /> : <QcStation key={m.id} id={m.id} />,
         )}
-        {engine.state.conveyors.map((c) => (
+        {plant.state.conveyors.map((c) => (
           <ConveyorModel key={c.id} id={c.id} />
         ))}
         <Warehouse kind="raw" />

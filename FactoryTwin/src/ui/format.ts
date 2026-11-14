@@ -1,5 +1,5 @@
-import { SHIFT_START_HOUR } from '../sim/config';
-import type { AgvState, ConveyorStatus, MachineStatus, OrderPriority, OrderStatus, Severity } from '../sim/types';
+import { SHIFT_START_HOUR } from '../twin/config';
+import type { AgvState, ConveyorStatus, MachineStatus } from '../twin/types';
 
 export const STATUS_COLOR: Record<MachineStatus, string> = {
   RUNNING: '#22c55e',
@@ -10,6 +10,7 @@ export const STATUS_COLOR: Record<MachineStatus, string> = {
   FAULT: '#ef4444',
   REPAIR: '#fb923c',
   MAINTENANCE: '#a78bfa',
+  UNKNOWN: '#6b7280',
 };
 
 export const STATUS_LABEL: Record<MachineStatus, string> = {
@@ -21,6 +22,7 @@ export const STATUS_LABEL: Record<MachineStatus, string> = {
   FAULT: 'Störung',
   REPAIR: 'Instandsetzung',
   MAINTENANCE: 'Wartung',
+  UNKNOWN: 'Nicht erreichbar',
 };
 
 export const STATUS_SHORT: Record<MachineStatus, string> = {
@@ -32,6 +34,7 @@ export const STATUS_SHORT: Record<MachineStatus, string> = {
   FAULT: 'Störung',
   REPAIR: 'Reparatur',
   MAINTENANCE: 'Wartung',
+  UNKNOWN: '?',
 };
 
 export const CONVEYOR_COLOR: Record<ConveyorStatus, string> = {
@@ -57,6 +60,7 @@ export const AGV_COLOR: Record<AgvState, string> = {
   TO_CHARGE: '#a3e635',
   CHARGING: '#22c55e',
   OFFLINE: '#64748b',
+  FAULT: '#ef4444',
 };
 
 export const AGV_LABEL: Record<AgvState, string> = {
@@ -68,46 +72,20 @@ export const AGV_LABEL: Record<AgvState, string> = {
   TO_CHARGE: 'Fährt zur Ladestation',
   CHARGING: 'Lädt Akku',
   OFFLINE: 'Außer Betrieb',
+  FAULT: 'Störung',
 };
 
-export const ORDER_STATUS_COLOR: Record<OrderStatus, string> = {
-  GEPLANT: '#64748b',
-  AKTIV: '#38bdf8',
-  VERZUG: '#f59e0b',
-  BLOCKIERT: '#ef4444',
-  ABGESCHLOSSEN: '#22c55e',
-  STORNIERT: '#475569',
-};
+export type EventSeverity = 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR';
 
-export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
-  GEPLANT: 'Geplant',
-  AKTIV: 'In Arbeit',
-  VERZUG: 'Verzug',
-  BLOCKIERT: 'Blockiert',
-  ABGESCHLOSSEN: 'Fertig',
-  STORNIERT: 'Storniert',
-};
-
-export const PRIORITY_LABEL: Record<OrderPriority, string> = { normal: 'Normal', hoch: 'Hoch', eilig: 'Eilig' };
-export const PRIORITY_COLOR: Record<OrderPriority, string> = { normal: '#64748b', hoch: '#f59e0b', eilig: '#ef4444' };
-
-export const SEVERITY_COLOR: Record<Severity, string> = {
-  info: '#64748b',
-  success: '#22c55e',
-  warning: '#f59e0b',
-  error: '#ef4444',
-};
-
-export const SEVERITY_LABEL: Record<Severity, string> = {
-  info: 'Info',
-  success: 'OK',
-  warning: 'Warnung',
-  error: 'Fehler',
+export const SEVERITY_COLOR: Record<EventSeverity, string> = {
+  INFO: '#64748b',
+  SUCCESS: '#22c55e',
+  WARNING: '#f59e0b',
+  ERROR: '#ef4444',
 };
 
 const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
 
-/** Simulation time → shop-floor clock (shift starts 06:00 on day 1). */
 export function clock(t: number, seconds = true): string {
   const total = SHIFT_START_HOUR * 3600 + t;
   const h = Math.floor(total / 3600) % 24;

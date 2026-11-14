@@ -2,9 +2,9 @@ import { RoundedBox } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { PRODUCT_IDS, PRODUCTS } from '../sim/config';
-import { nodePos } from '../sim/layout';
-import { engine } from '../store/factoryStore';
+import { PRODUCT_IDS, PRODUCTS } from '../twin/config';
+import { nodePos } from '../twin/layout';
+import { plant, sceneOf, useFactory } from '../store/factoryStore';
 import { AGV_COLOR, CONVEYOR_COLOR } from '../ui/format';
 import { Selectable } from './common';
 import { createBeltTexture, ledMaterial, MAT } from './materials';
@@ -15,7 +15,7 @@ import { BELT_TOP } from './runtime';
 /* ====================================================================== */
 
 export function ConveyorModel({ id }: { id: string }) {
-  const c0 = engine.conveyor(id)!;
+  const c0 = plant.conveyor(id)!;
   const len = c0.length;
   const dx = c0.end.x - c0.start.x;
   const dz = c0.end.z - c0.start.z;
@@ -36,7 +36,7 @@ export function ConveyorModel({ id }: { id: string }) {
   const rollers = useRef<THREE.Group>(null);
 
   useFrame(() => {
-    const c = engine.state.conveyors.find((x) => x.id === id)!;
+    const c = plant.state.conveyors.find((x) => x.id === id)!;
     // texture runs along +v; belt moves from start → end
     belt.map!.offset.y = c.beltOffset / 0.5;
     status.emissive.set(CONVEYOR_COLOR[c.status]);
@@ -178,7 +178,7 @@ export function Warehouse({ kind }: { kind: 'raw' | 'finished' }) {
   }, [slots, tmp]);
 
   useFrame(() => {
-    const inv = engine.state.inventory;
+    const inv = plant.state.inventory;
     const key = kind === 'raw' ? `${inv.raw}` : PRODUCT_IDS.map((p) => inv.finished[p]).join(',');
     if (key === last.current) return;
     last.current = key;
@@ -227,7 +227,7 @@ export function Warehouse({ kind }: { kind: 'raw' | 'finished' }) {
 export function Chargers() {
   return (
     <group>
-      {engine.state.chargers.map((c) => (
+      {plant.state.chargers.map((c) => (
         <Charger key={c.id} id={c.id} />
       ))}
     </group>
@@ -235,12 +235,12 @@ export function Chargers() {
 }
 
 function Charger({ id }: { id: string }) {
-  const ch = engine.state.chargers.find((c) => c.id === id)!;
+  const ch = plant.state.chargers.find((c) => c.id === id)!;
   const p = nodePos(ch.node);
   const led = useMemo(() => ledMaterial('#22c55e', 1), []);
   useFrame(({ clock }) => {
-    const c = engine.state.chargers.find((x) => x.id === id)!;
-    const agv = c.occupiedBy ? engine.agv(c.occupiedBy) : null;
+    const c = plant.state.chargers.find((x) => x.id === id)!;
+    const agv = c.occupiedBy ? plant.agv(c.occupiedBy) : null;
     const charging = agv && (agv.state === 'CHARGING' || agv.state === 'OFFLINE') && agv.battery < 100;
     led.emissive.set(charging ? '#22c55e' : agv ? '#38bdf8' : '#334155');
     led.emissiveIntensity = charging ? 1.5 + Math.sin(clock.elapsedTime * 3) * 0.8 : 1;
@@ -271,11 +271,16 @@ function Charger({ id }: { id: string }) {
 /* ====================================================================== */
 
 export function AgvFleet() {
+  // the fleet is known with the first frame; re-render only when its ids change
+  const ids = useFactory((s) => sceneOf(s).agvs.map((a) => a.id).join(","));
   return (
     <group>
-      {engine.state.agvs.map((a) => (
-        <AgvModel key={a.id} id={a.id} />
-      ))}
+      {ids
+        .split(",")
+        .filter(Boolean)
+        .map((id) => (
+          <AgvModel key={id} id={id} />
+        ))}
     </group>
   );
 }
@@ -287,7 +292,7 @@ function AgvModel({ id }: { id: string }) {
   const warn = useMemo(() => ledMaterial('#ffb020', 0), []);
   const lift = useRef<THREE.Mesh>(null);
   useFrame(({ clock }, dt) => {
-    const a = engine.state.agvs.find((x) => x.id === id)!;
+    const a = plant.state.agvs.find((x) => x.id === id)!;
     if (!g.current) return;
     g.current.position.set(a.pos.x, 0, a.pos.z);
     g.current.rotation.y = a.heading;

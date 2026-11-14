@@ -2,7 +2,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef, type ReactNode } from 'react';
 import * as THREE from 'three';
-import { engine, useFactory, type Selection } from '../store/factoryStore';
+import { plant, useFactory, type Selection } from '../store/factoryStore';
 import { ledMaterial } from './materials';
 
 /** Wraps an asset so it can be hovered, clicked (select) and double clicked (select + focus camera). */
@@ -79,7 +79,7 @@ export function StackLight({
 export function useAnimClock() {
   const t = useRef(0);
   useFrame((_, dt) => {
-    const s = engine.state;
+    const s = plant.state;
     if (s.running) t.current += Math.min(dt, 0.1) * Math.min(s.speed, 4);
   });
   return t;
