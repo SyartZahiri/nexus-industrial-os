@@ -18,11 +18,13 @@ class LocalMachinesTest {
   private static final SimRules QUIET = new SimRules(false, false, false, 0.85);
   private final List<String> seen = new ArrayList<>();
   private Runnable onFinished = () -> {};
+  private boolean statusFails;
   private LocalMachines machines;
 
   private final MachineFeedback recorder = new MachineFeedback() {
     @Override public void statusChanged(String m, MachineStatus from, MachineStatus to) {
       seen.add(m + " " + from + ">" + to);
+      if (statusFails) throw new IllegalStateException("Empfänger kaputt");
     }
 
     @Override public void faultRaised(String m, String faultTypeId, String label, boolean scrapped) {
@@ -72,6 +74,17 @@ class LocalMachinesTest {
     assertThatThrownBy(() -> machines.startJob(job("PO-2"))).isInstanceOf(IllegalTransitionException.class)
         .hasMessage("Ungültiger Zustandsübergang für CNC-01: RUNNING → RUNNING");
     machines.step(100);
+    assertThat(seen).containsExactly("CNC-01 RUNNING>IDLE", "CNC-01 done PO-1/1 1+0");
+  }
+
+  /** Security review: a report the target cannot take must not swallow the reports after it. */
+  @Test
+  void aFailingReportDoesNotSwallowTheOnesAfterIt() {
+    machines.startJob(job("PO-1"));
+    seen.clear();
+    statusFails = true;
+    assertThatThrownBy(() -> machines.step(100)).isInstanceOf(IllegalStateException.class)
+        .hasMessage("Empfänger kaputt");
     assertThat(seen).containsExactly("CNC-01 RUNNING>IDLE", "CNC-01 done PO-1/1 1+0");
   }
 

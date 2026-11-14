@@ -19,12 +19,26 @@ public final class LocalMachines implements MachineGateway {
     this.target = target;
   }
 
+  /**
+   * Every report is handed on, even when the command or an earlier report failed: a lost report would leave
+   * SmartFactory and the machines out of step for good. The command's own error wins; others are attached to it.
+   */
   private void call(Runnable command) {
+    RuntimeException failure = null;
     try {
       command.run();
-    } finally {
-      for (FeedbackOutbox.Item item : outbox.drain()) item.deliverTo(target);
+    } catch (RuntimeException refused) {
+      failure = refused;
     }
+    for (FeedbackOutbox.Item item : outbox.drain()) {
+      try {
+        item.deliverTo(target);
+      } catch (RuntimeException notTaken) {
+        if (failure == null) failure = notTaken;
+        else failure.addSuppressed(notTaken);
+      }
+    }
+    if (failure != null) throw failure;
   }
 
   @Override public void reset(long seed) { simulation = PlantMachines.newSimulation(seed, outbox); }
