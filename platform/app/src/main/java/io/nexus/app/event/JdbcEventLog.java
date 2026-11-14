@@ -14,7 +14,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /** EventLog on PostgreSQL. Payload records are stored as JSON and read back by the type registered for the event. */
 @Component
-class JdbcEventLog implements EventLog {
+public class JdbcEventLog implements EventLog {
   private static final String EVENT_COLUMNS =
       "e.event_id, e.sim_time_ms, e.type, e.source, e.severity, e.correlation_id, e.payload::text as payload";
 
@@ -89,6 +89,29 @@ class JdbcEventLog implements EventLog {
   public Optional<NexusEvent> find(String eventId) {
     return jdbc.sql("select " + EVENT_COLUMNS + " from event e where e.event_id = :id").param("id", eventId)
         .query((rs, i) -> event(rs)).optional();
+  }
+
+  /** An event with its position in the table. */
+  public record Sequenced(long seq, NexusEvent event) {}
+
+  /** Up to limit events of the run after the given position, in publish order. */
+  public List<Sequenced> eventsAfter(long runId, long afterSeq, int limit) {
+    return jdbc.sql("select e.seq, " + EVENT_COLUMNS + " from event e where e.run_id = :run and e.seq > :after"
+            + " order by e.seq limit :limit")
+        .param("run", runId).param("after", afterSeq).param("limit", limit)
+        .query((rs, i) -> new Sequenced(rs.getLong("seq"), event(rs))).list();
+  }
+
+  /** Position of the newest event of the run, 0 if it has none. */
+  public long lastSeq(long runId) {
+    return jdbc.sql("select coalesce(max(seq), 0) from event where run_id = :run").param("run", runId)
+        .query(Long.class).single();
+  }
+
+  /** Every event of a run in publish order: the server's counterpart of the in-memory plant's events(). */
+  public List<NexusEvent> eventsOfRun(long runId) {
+    return jdbc.sql("select " + EVENT_COLUMNS + " from event e where e.run_id = :run order by e.seq")
+        .param("run", runId).query((rs, i) -> event(rs)).list();
   }
 
   private NexusEvent event(ResultSet rs) throws SQLException {

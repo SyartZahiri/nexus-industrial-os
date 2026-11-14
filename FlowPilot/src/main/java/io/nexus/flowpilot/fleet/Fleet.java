@@ -60,6 +60,18 @@ public final class Fleet {
     this.dispatcher = new Dispatcher(graph);
     Set<String> entered = new java.util.HashSet<>();
     for (var e : FlowPilotMasterData.edges()) if (!entered.add(e.to())) junctions.add(e.to());
+    reload();
+  }
+
+  /**
+   * Loads vehicles and edge blocks from the store: at start, and after a reset of the simulation. Motion state
+   * (position between nodes, speed, route, claims at junctions) starts afresh at each vehicle's node.
+   */
+  public void reload() {
+    vehicles.clear();
+    reportedBlocked.clear();
+    claims.clear();
+    for (String edge : new ArrayList<>(graph.blockedEdges())) graph.setBlocked(edge, false);
     for (String edge : store.blockedEdges()) graph.setBlocked(edge, true);
     for (AgvRecord r : store.agvs()) {
       var node = graph.node(r.nodeId());

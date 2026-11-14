@@ -121,6 +121,18 @@ public final class SmartFactory implements MachineFeedback {
     return locked(orders::orders);
   }
 
+  /**
+   * For a reset of the simulation, after the stores were emptied: forgets the plan and pending follow-up work and
+   * goes back to the default dispatch rule (without the events a rule change publishes; the plant sets it next).
+   */
+  public void reset() {
+    synchronized (lock) {
+      clearDeferred();
+      orderService.setRule(io.nexus.smartfactory.planning.DispatchRule.PRIORITY);
+      orderService.forgetPlan();
+    }
+  }
+
   /** Orders still in work, ordered by id. */
   public List<ProductionOrder> openOrders() {
     return locked(orders::open);

@@ -124,6 +124,17 @@ public final class FlowPilot {
     }
   }
 
+  /**
+   * For a reset of the simulation, after the stores were put back to master data: reloads the fleet and drops
+   * replenishment deliveries under way.
+   */
+  public void reset() {
+    synchronized (lock) {
+      replenishment.reset();
+      fleet.reload();
+    }
+  }
+
   /** Goods issue, e.g. shipping finished goods until RouteMind collects them. */
   public void issue(String materialId, String locationId, int quantity) {
     synchronized (lock) {

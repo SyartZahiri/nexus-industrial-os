@@ -37,7 +37,7 @@ class SmartFactoryApiTest {
     // @Primary: with FlowPilot in the context, SmartFactory must still talk to the fakes in this test
     @Bean @Primary FakeMaterialService fakeMaterialService() { return new FakeMaterialService(); }
     @Bean @Primary FakeTransportService fakeTransportService(EventPublisher events) { return new FakeTransportService(events); }
-    @Bean FakeMachineControl machineControl() { return new FakeMachineControl(); }
+    @Bean @Primary FakeMachineControl fakeMachineControl() { return new FakeMachineControl(); }
   }
 
   @Value("${local.server.port}") int port;

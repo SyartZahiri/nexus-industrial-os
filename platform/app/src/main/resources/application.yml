@@ -13,3 +13,11 @@ spring:
 nexus:
   sim:
     seed: 4711
+---
+spring:
+  config:
+    activate:
+      on-profile: embedded
+nexus:
+  ws:
+    allowed-origins: http://localhost:5173,http://localhost:5179
