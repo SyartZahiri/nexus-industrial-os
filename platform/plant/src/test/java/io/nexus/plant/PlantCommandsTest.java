@@ -29,7 +29,7 @@ class PlantCommandsTest {
   @Test
   void machineAgvRouteStockAndRuleCommandsReachThePlant() {
     assertThat(send("{\"command\":\"machineFault\",\"machineId\":\"CNC-02\",\"faultTypeId\":\"COMM\"}")).containsEntry("ok", true);
-    assertThat(plant.simulation().machines().stream().filter(m -> m.id().equals("CNC-02")).findFirst().orElseThrow().status())
+    assertThat(plant.machines().views().stream().filter(m -> m.id().equals("CNC-02")).findFirst().orElseThrow().status())
         .isEqualTo(MachineStatus.FAULT);
     assertThat(send("{\"command\":\"machineRepair\",\"machineId\":\"CNC-02\"}")).containsEntry("ok", true);
     assertThat(send("{\"command\":\"machineConfigure\",\"machineId\":\"CNC-01\",\"override\":120,\"coolant\":false}"))

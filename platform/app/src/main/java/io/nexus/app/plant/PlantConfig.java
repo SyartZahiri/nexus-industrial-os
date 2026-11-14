@@ -6,11 +6,11 @@ import io.nexus.contracts.event.EventBus;
 import io.nexus.contracts.event.EventTypes;
 import io.nexus.contracts.event.Payloads;
 import io.nexus.contracts.port.MachineControl;
-import io.nexus.contracts.sim.SeededRandom;
 import io.nexus.contracts.sim.SimTime;
 import io.nexus.flowpilot.FlowPilot;
 import io.nexus.plant.Plant;
 import io.nexus.plant.PlantRules;
+import io.nexus.plant.machines.LocalMachines;
 import io.nexus.smartfactory.SmartFactory;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
@@ -25,8 +25,7 @@ class PlantConfig {
   @Bean
   @DependsOnDatabaseInitialization
   Plant plant(EventBus bus, SimTime time, SimRun run, FlowPilot flowPilot, SmartFactory smartFactory) {
-    var random = new SeededRandom(run.seed());
-    return new Plant(bus, time, random, flowPilot, smartFactory, Plant.simulationFor(random, smartFactory),
+    return new Plant(bus, time, run.seed(), flowPilot, smartFactory, new LocalMachines(smartFactory),
         PlantRules.DEFAULT);
   }
 
@@ -51,9 +50,9 @@ class PlantConfig {
 
   private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(PlantConfig.class);
 
-  /** Follows the plant's current machines, also after a reset replaced them. */
+  /** The plant's machines as SmartFactory commands them. */
   @Bean
   MachineControl machineControl(Plant plant) {
-    return plant.machineControl();
+    return plant.machines();
   }
 }
