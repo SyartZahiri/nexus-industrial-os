@@ -1,0 +1,3 @@
+nexus:
+  opcua:
+    port: 0
