@@ -47,6 +47,10 @@ import org.slf4j.LoggerFactory;
  * <p>Called only by the plant under the platform lock, one call at a time. Milo's threads only flip
  * {@link #sessionActive}; nothing here is locked on them. A call whose answer is lost is sent once more with the
  * same call id at once; if that fails too, the machines count as unreachable until the connection is back.
+ *
+ * <p>While unreachable, every machine is UNKNOWN (Spec 9): no calls, commands are refused with a conflict, the frame
+ * shows the last good values with status UNKNOWN. Milo reconnects the session itself; the gateway tries again after
+ * 1 s, doubling up to 30 s.
  */
 public final class OpcUaMachines implements MachineGateway {
   private static final Logger log = LoggerFactory.getLogger(OpcUaMachines.class);
@@ -197,9 +201,73 @@ public final class OpcUaMachines implements MachineGateway {
     conveyors.clear();
   }
 
+  /**
+   * One step of the machines. While they are unreachable, nothing is called: no step waits for a timeout under the
+   * platform lock. The machines stand still meanwhile; the plant's clock goes on.
+   */
   @Override
   public void step(long dtMs) {
-    call("Step", Variant.ofInt64(dtMs));
+    if (reachable && (suspect || !sessionActive)) lost();
+    if (!reachable && sessionActive && System.currentTimeMillis() >= retryAt) regain();
+    if (reachable) call("Step", Variant.ofInt64(dtMs));
+  }
+
+  /** All machines count as UNKNOWN: SmartFactory plans around them and gives them nothing. */
+  private void lost() {
+    reachable = false;
+    retryAt = System.currentTimeMillis() + backoffMs;
+    connection(Severity.ERROR, "OPC UA getrennt, Maschinen gelten als unbekannt");
+    for (String id : machineIds) {
+      MachineStatus before = known.get(id);
+      if (before == MachineStatus.UNKNOWN) continue;
+      known.put(id, MachineStatus.UNKNOWN);
+      target.statusChanged(id, before, MachineStatus.UNKNOWN);
+    }
+  }
+
+  /**
+   * Fetches a lost answer (same call id: the server runs the call at most once), reads the values, then reports
+   * every machine still UNKNOWN in the state it really is in. If anything fails, tries again after the backoff.
+   */
+  private void regain() {
+    Variant[] replayed = null;
+    try {
+      if (pending != null) {
+        replayed = send(pending.method(), pending.inputs());
+        if (replayed == null) throw new IllegalStateException("keine Antwort auf " + pending.method());
+      }
+      readValues();                       // after the replayed call ran: the values include its effect
+    } catch (RuntimeException stillGone) {
+      backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
+      retryAt = System.currentTimeMillis() + backoffMs;
+      return;
+    }
+    String replayedMethod = pending == null ? null : pending.method();
+    pending = null;
+    reachable = true;
+    suspect = false;
+    backoffMs = 1_000;
+    connection(Severity.INFO, "OPC UA wieder verbunden");
+    if (replayed != null) {
+      try {
+        deliver(replayed);
+      } catch (RuntimeException refused) {             // its caller is long gone: report instead of throwing
+        bus.publish(EventTypes.DECISION, "opcua", Severity.ERROR, null, new Payloads.Decision("OPC UA", "nachgeholt",
+            List.of(), replayedMethod + " nach Verbindungsverlust abgelehnt: " + refused.getMessage()));
+      }
+    }
+    for (String id : machineIds) {
+      if (known.get(id) != MachineStatus.UNKNOWN) continue;
+      MachineStatus now = views.containsKey(id) ? views.get(id).status() : MachineStatus.IDLE;
+      known.put(id, now);
+      target.statusChanged(id, MachineStatus.UNKNOWN, now);
+    }
+  }
+
+  private void connection(Severity severity, String message) {
+    if (severity == Severity.ERROR) log.warn(message);
+    else log.info(message);
+    bus.publish(EventTypes.OPCUA_CONNECTION, "opcua", severity, null, new Payloads.Note(message));
   }
 
   @Override
