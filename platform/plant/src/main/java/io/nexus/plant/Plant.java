@@ -10,16 +10,14 @@ import io.nexus.contracts.event.NexusEvent;
 import io.nexus.contracts.memory.MemoryEventLog;
 import io.nexus.contracts.memory.MemoryIdSource;
 import io.nexus.contracts.memory.MemoryUnitOfWork;
-import io.nexus.contracts.port.MachineControl;
-import io.nexus.contracts.port.MachineControl.MachineJob;
 import io.nexus.contracts.sim.SeededRandom;
 import io.nexus.contracts.sim.SimTime;
 import io.nexus.flowpilot.FlowPilot;
 import io.nexus.flowpilot.store.StockLine;
 import io.nexus.flowpilot.store.TransportOrder;
-import io.nexus.sim.Simulation;
+import io.nexus.plant.machines.LocalMachines;
+import io.nexus.plant.machines.MachineGateway;
 import io.nexus.smartfactory.SmartFactory;
-import io.nexus.smartfactory.master.SmartFactoryMasterData;
 import io.nexus.smartfactory.store.Operation;
 import io.nexus.smartfactory.store.ProductionOrder;
 import io.nexus.smartfactory.store.memory.MemoryMachineStore;
@@ -40,15 +38,11 @@ public final class Plant {
   /** One call advances at most one simulated day; larger requests are refused instead of freezing the caller. */
   public static final long MAX_ADVANCE_MS = 86_400_000;
 
-  /** Drop and take positions on the collecting conveyor CV-03, from FactoryTwin/src/sim/initialState.ts. */
-  private static final double CV03_LENGTH_M = 27;
-  private static final double CV03_SPEED_MPS = 0.6;
-
   private final EventBus bus;
   private final SimTime time;
   private final FlowPilot flowPilot;
   private final SmartFactory smartFactory;
-  private Simulation simulation;
+  private final MachineGateway machines;
   private OrderGenerator orders;
   private final Shipping shipping = new Shipping();
   private final MemoryEventLog memoryLog;
@@ -67,52 +61,30 @@ public final class Plant {
     var eventIds = new EventIds(runId);
     var bus = new EventBus(log, work, time, () -> eventIds);
     var ids = new MemoryIdSource(work);
-    var random = new SeededRandom(seed);
     var flowPilot = FlowPilot.inMemory(bus, work, time, ids);
-    Simulation[] simulation = new Simulation[1];
+    MachineGateway[] machines = new MachineGateway[1];
     var smartFactory = new SmartFactory(new MemoryOrderStore(work), new MemoryMachineStore(work), bus, work, time, ids,
-        flowPilot::materials, flowPilot::transports, () -> simulation[0]);
-    simulation[0] = simulationFor(random, smartFactory);
-    return new Plant(bus, time, random, flowPilot, smartFactory, simulation[0], rules, log);
+        flowPilot::materials, flowPilot::transports, () -> machines[0]);
+    machines[0] = new LocalMachines(smartFactory);
+    return new Plant(bus, time, seed, flowPilot, smartFactory, machines[0], rules, log);
   }
 
-  /** The machines of the plant, reporting to SmartFactory. The server builds its simulation with this too. */
-  public static Simulation simulationFor(SeededRandom random, SmartFactory smartFactory) {
-    List<Simulation.MachineSpec> specs = new ArrayList<>();
-    for (SmartFactoryMasterData.Machine m : SmartFactoryMasterData.machines()) {
-      specs.add(new Simulation.MachineSpec(m.id(), m.kind()));
-    }
-    List<Simulation.ConveyorLink> links = new ArrayList<>();
-    for (SmartFactoryMasterData.ConveyorLink l : SmartFactoryMasterData.conveyorLinks()) {
-      links.add(new Simulation.ConveyorLink(l.fromMachineId(), l.conveyorId(), l.toMachineId(), dropAt(l.fromMachineId()),
-          CV03_LENGTH_M, CV03_SPEED_MPS));
-    }
-    return new Simulation(specs, links, random.fork("sim"), smartFactory);
+  /** With existing facades: the server runtime passes its JDBC-backed modules and its machines (OPC UA). */
+  public Plant(EventBus bus, SimTime time, long seed, FlowPilot flowPilot, SmartFactory smartFactory,
+               MachineGateway machines, PlantRules rules) {
+    this(bus, time, seed, flowPilot, smartFactory, machines, rules, null);
   }
 
-  private static double dropAt(String machineId) {
-    return switch (machineId) {
-      case "ROB-01" -> 6.7;
-      case "ROB-02" -> 15.7;
-      default -> throw new IllegalStateException("Keine Ablageposition auf CV-03 für " + machineId);
-    };
-  }
-
-  /** With existing facades: the server runtime passes its JDBC-backed modules and its simulation. */
-  public Plant(EventBus bus, SimTime time, SeededRandom random, FlowPilot flowPilot, SmartFactory smartFactory,
-               Simulation simulation, PlantRules rules) {
-    this(bus, time, random, flowPilot, smartFactory, simulation, rules, null);
-  }
-
-  private Plant(EventBus bus, SimTime time, SeededRandom random, FlowPilot flowPilot, SmartFactory smartFactory,
-                Simulation simulation, PlantRules rules, MemoryEventLog memoryLog) {
+  private Plant(EventBus bus, SimTime time, long seed, FlowPilot flowPilot, SmartFactory smartFactory,
+                MachineGateway machines, PlantRules rules, MemoryEventLog memoryLog) {
     this.bus = bus;
     this.time = time;
     this.flowPilot = flowPilot;
     this.smartFactory = smartFactory;
-    this.simulation = simulation;
-    this.orders = new OrderGenerator(random.fork("orders"));
+    this.machines = machines;
+    this.orders = new OrderGenerator(new SeededRandom(seed).fork("orders"));
     this.memoryLog = memoryLog;
+    machines.reset(seed);
     applyRules(rules);
   }
 
@@ -136,7 +108,7 @@ public final class Plant {
       long now = time.nowMs();
       phase("Aufträge", () -> orders.step(now, rules, smartFactory));
       phase("Versand", () -> shipping.step(now, rules, flowPilot));
-      phase("Maschinen", () -> simulation.step(STEP_MS));
+      phase("Maschinen", () -> machines.step(STEP_MS));
       phase("FlowPilot", () -> flowPilot.step(STEP_MS));
       for (int i = 0; i < extraPhases.size(); i++) phase(extraPhaseNames.get(i), extraPhases.get(i));
       phase("Zustellung", bus::retryFailed);
@@ -174,9 +146,8 @@ public final class Plant {
    */
   public void reset(long seed) {
     synchronized (bus) {
-      var random = new SeededRandom(seed);
-      simulation = simulationFor(random, smartFactory);
-      orders = new OrderGenerator(random.fork("orders"));
+      machines.reset(seed);
+      orders = new OrderGenerator(new SeededRandom(seed).fork("orders"));
       applyRules(rules);
     }
   }
@@ -188,7 +159,7 @@ public final class Plant {
   }
 
   private void applyRules(PlantRules newRules) {
-    simulation.setRules(newRules.machines());
+    machines.setRules(newRules.machines());
     // only on a change: a new plant on default rules commands nothing while it is being built (server start)
     if (smartFactory.dispatchRule() != newRules.dispatchRule()) smartFactory.setDispatchRule(newRules.dispatchRule());
     rules = newRules;
@@ -203,7 +174,7 @@ public final class Plant {
   /** Override and coolant of a machine; only the simulation knows them. */
   public void configureMachine(String machineId, int overridePercent, boolean coolant) {
     synchronized (bus) {
-      simulation.configure(machineId, overridePercent, coolant);
+      machines.configure(machineId, overridePercent, coolant);
     }
   }
 
@@ -215,21 +186,9 @@ public final class Plant {
     return smartFactory;
   }
 
-  /** The machines. Use the plant's methods or SmartFactory's commands to change them, never this from outside a step. */
-  public Simulation simulation() {
-    return simulation;
-  }
-
-  /** The machines as SmartFactory commands them; follows a reset, unlike a reference to simulation(). */
-  public MachineControl machineControl() {
-    return new MachineControl() {
-      @Override public void start(String machineId) { simulation.start(machineId); }
-      @Override public void stop(String machineId) { simulation.stop(machineId); }
-      @Override public void injectFault(String machineId, String faultTypeId) { simulation.injectFault(machineId, faultTypeId); }
-      @Override public void repair(String machineId) { simulation.repair(machineId); }
-      @Override public void maintain(String machineId) { simulation.maintain(machineId); }
-      @Override public void startJob(MachineJob job) { simulation.startJob(job); }
-    };
+  /** The machines. Commands go through SmartFactory or the plant; tests read views() here. */
+  public MachineGateway machines() {
+    return machines;
   }
 
   public long nowMs() {
@@ -274,11 +233,11 @@ public final class Plant {
         transports.add(new PlantFrame.TransportView(t.id(), t.kind().name(), t.orderId(), t.materialId(), t.quantity(),
             t.status().name(), t.agvId(), t.from().kind() + ":" + t.from().id(), t.to().kind() + ":" + t.to().id()));
       }
-      List<io.nexus.sim.Simulation.MachineView> machines = new ArrayList<>(simulation.machines());
-      machines.sort((a, b) -> a.id().compareTo(b.id()));
+      List<io.nexus.sim.Simulation.MachineView> machineViews = new ArrayList<>(machines.views());
+      machineViews.sort((a, b) -> a.id().compareTo(b.id()));
       List<FlowPilot.VehicleView> vehicles = new ArrayList<>(flowPilot.vehicles());
       vehicles.sort((a, b) -> a.id().compareTo(b.id()));
-      return new PlantFrame(time.nowMs(), machines, simulation.conveyors(), vehicles, stock, orderViews, transports);
+      return new PlantFrame(time.nowMs(), machineViews, machines.conveyors(), vehicles, stock, orderViews, transports);
     }
   }
 

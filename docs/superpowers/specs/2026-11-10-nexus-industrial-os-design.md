@@ -1,8 +1,10 @@
 # NEXUS Industrial OS – Design
 
-Stand: 2026-11-10, Revision 2. Status: zur Freigabe.
+Stand: 2026-11-14, Revision 3. Status: freigegeben bis Revision 2, Revision 3 zur Freigabe mit M1-D3.
 
 Revision 2 ändert gegenüber der freigegebenen ersten Fassung: Die Online-Version ist voll bedienbar und läuft ohne Server im Browser (Abschnitt 2a), RouteMind kommt als viertes System hinzu (Abschnitt 15a), Java 25 statt 21. Die Befunde aus dem Review von M1-A sind als Anforderungen eingearbeitet (Abschnitte 6, 7, 16).
+
+Revision 3 (M1-D3) ändert: Das OPC-UA-Gateway gehört zur Anlage, nicht zu FlowPilot, und ruft die Maschinen je Schritt synchron auf; Subscriptions bietet nur der Server für fremde Clients an (Abschnitte 5, 9). Neuer Maschinenzustand `UNKNOWN` (Abschnitt 8). `machine.material_request` bleibt ungenutzt. Der WebSocket sendet Ereignisse gesammelt mit `seq` (Abschnitt 12, umgesetzt in M1-D2).
 
 ## 1. Ziel
 
@@ -103,7 +105,7 @@ Abhängigkeitsregel: `FlowPilot`, `SmartFactory`, `RouteMind` und `sim` hängen 
 | Physik der Anlagen (Fortschritt, Temperatur, Verschleiss, Störung) | `sim` | ausschliesslich OPC UA |
 | Ereignis- und Auditprotokoll | `app` | REST, WebSocket |
 
-Maschinen-Betriebszustand: `sim` erzeugt ihn, der OPC-UA-Client in FlowPilot liest ihn und veröffentlicht `machine.status`. SmartFactory führt daraus den fachlichen Maschinenzustand. Es gibt keinen zweiten Weg am OPC UA vorbei.
+Maschinen-Betriebszustand: `sim` erzeugt ihn; das Gateway der Anlage (Port `MachineGateway`) gibt die Rückmeldungen an SmartFactory weiter, das daraus den fachlichen Maschinenzustand führt und `machine.status` veröffentlicht. Auf dem Server laufen alle Rückmeldungen und Befehle über OPC UA; einen zweiten Weg daran vorbei gibt es nicht.
 
 ## 6. Ports zwischen den Modulen (`contracts`)
 
@@ -181,7 +183,7 @@ CREATED | ASSIGNED | TO_PICKUP      → CANCELLED
 
 Ein AGV hält höchstens einen nicht-terminalen Transportauftrag (Unique-Index auf `agv_id` für aktive Zustände).
 
-**Maschine**: `IDLE`, `SETUP`, `RUNNING`, `BLOCKED`, `STOPPED`, `FAULT`, `REPAIR`, `MAINTENANCE`, mit den Übergängen der heutigen Engine.
+**Maschine**: `IDLE`, `SETUP`, `RUNNING`, `BLOCKED`, `STOPPED`, `FAULT`, `REPAIR`, `MAINTENANCE`, mit den Übergängen der heutigen Engine; dazu `UNKNOWN` (nicht erreichbar, nur vom Gateway gesetzt, von jedem Zustand aus und in jeden zurück).
 
 **AGV**: `IDLE`, `TO_PICKUP`, `LOADING`, `TO_DROP`, `UNLOADING`, `TO_CHARGE`, `CHARGING`, `FAULT`, `OFFLINE`.
 
@@ -192,7 +194,7 @@ Ein AGV hält höchstens einen nicht-terminalen Transportauftrag (Unique-Index a
 - **Wegenetz.** Gerichteter Graph aus der bestehenden Hallengeometrie. Routing mit A* (Heuristik: euklidische Distanz). Kanten lassen sich sperren; betroffene Fahrzeuge planen neu, ohne gültige Route wartet der Auftrag und meldet `route.blocked`.
 - **Disposition.** Offene Aufträge nach Priorität, dann Alter. Je Auftrag das verfügbare AGV mit ausreichender Kapazität und Akkureichweite und der kürzesten Anfahrt. Die Wahl wird als `decision` protokolliert.
 - **Flotte.** Position, Geschwindigkeit, Ladung, Akku, Status. Folgeabstand und Vorfahrt wie bisher. Laden an `CH-1` bis `CH-6`. Wartung und Ausfälle zufällig (Seed) oder ausgelöst.
-- **OPC UA** (nur Server-Laufzeit, als Implementierung des Ports `MachineGateway`; im Browser ruft derselbe Port die Simulation direkt auf). Milo-Client mit Subscription auf Status, Fortschritt, Sensoren und Materialanforderung je Maschine. Bei Verbindungsverlust: Reconnect mit Backoff, betroffene Maschinen gelten als `UNKNOWN` und erhalten keine neuen Transporte. Werte ausserhalb des gültigen Bereichs oder mit schlechtem Statuscode werden verworfen und protokolliert.
+- **OPC UA** (nur Server-Laufzeit, als Implementierung des Ports `MachineGateway`; im Browser ruft derselbe Port die Simulation direkt auf). Die Simulation läuft hinter einem Milo-OPC-UA-Server auf `127.0.0.1`: je Maschine Status, Auftrag, Fortschritt und Sensoren als Variablen, je Förderband die Teile, dazu die Methoden der Anlage (`Reset`, `Step`, Regeln, Befehle, `StartJob`). Lesen und Abonnieren darf jeder Client auf dem Rechner, Methoden nur das Gateway mit einem bei jedem Start neu erzeugten Passwort. Das Gateway ruft je Simulationsschritt `Step` synchron auf; die Rückmeldungen kommen als Ergebnis des Aufrufs zurück und erreichen SmartFactory vor dessen Ende, in derselben Reihenfolge wie im Browser. Subscriptions im Gateway gibt es nicht, weil ihre Benachrichtigungen die feste Schrittfolge (Abschnitt 11) brechen würden. Jeder Aufruf trägt eine Aufruf-ID; geht eine Antwort verloren, holt das Gateway sie mit derselben ID nach, und der Server führt den Aufruf nur einmal aus. Bei Verbindungsverlust gelten alle Maschinen als `UNKNOWN`: sie stehen still, fallen wie gestörte Maschinen aus der Planung und erhalten weder Aufträge noch Material. Milo baut die Sitzung selbst wieder auf, das Gateway versucht es nach 1 s, dann mit doppeltem Abstand bis 30 s. Danach meldet es den tatsächlichen Zustand jeder Maschine. Werte ausserhalb des gültigen Bereichs oder mit schlechtem Statuscode werden verworfen und protokolliert; das Zustandsbild behält die letzten gültigen Werte. Die Maschinen fordern kein Material an (`machine.material_request` bleibt ungenutzt), SmartFactory fordert es bei der Freigabe selbst an.
 
 ## 10. SmartFactory
 
@@ -229,7 +231,8 @@ REST unter `/api/v1`, beschrieben über OpenAPI (springdoc), Swagger UI unter `/
 WebSocket `/ws`:
 
 - `frame` (etwa 10 pro Sekunde): Simulationszeit, Maschinen (Status, Fortschritt, Sensoren), Förderbänder mit Teilepositionen, AGVs (Position, Richtung, Route, Ladung, Akku), Bestände, laufende Aufträge und Transporte.
-- `event`: jedes neue Ereignis einzeln.
+- `events`: alle neuen Ereignisse seit der letzten Nachricht, jedes mit seiner `seq`; ein Client, der neu verbindet, holt die Lücke über `GET /events?after=<seq>`.
+- `reset`: ein neuer Lauf hat begonnen (mit Seed).
 
 Das Frontend interpoliert zwischen zwei Frames.
 

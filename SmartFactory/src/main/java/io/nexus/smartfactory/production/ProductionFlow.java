@@ -254,8 +254,9 @@ public final class ProductionFlow {
     }
     machines.changeState(machineId, to, time.nowMs());
     machines.save(new MachineRecord(machineId, to, record.lastProductId(), record.version()));
-    service.publish(EventTypes.MACHINE_STATUS, to == MachineStatus.FAULT ? Severity.ERROR : Severity.INFO, null,
-        new Payloads.MachineStatusChanged(machineId, from, to));
+    Severity severity = to == MachineStatus.FAULT ? Severity.ERROR
+        : to == MachineStatus.UNKNOWN ? Severity.WARNING : Severity.INFO;
+    service.publish(EventTypes.MACHINE_STATUS, severity, null, new Payloads.MachineStatusChanged(machineId, from, to));
     return true;
   }
 

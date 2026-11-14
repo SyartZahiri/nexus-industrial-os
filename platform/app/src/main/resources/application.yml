@@ -13,6 +13,8 @@ spring:
 nexus:
   sim:
     seed: 4711
+  opcua:
+    port: ${NEXUS_OPCUA_PORT:4840}
 ---
 spring:
   config:

@@ -77,7 +77,7 @@ class PlantLongRunTest {
    */
   static void checkMachinesAgree(Plant plant) {
     var records = plant.smartFactory().machines();
-    for (var m : plant.simulation().machines()) {
+    for (var m : plant.machines().views()) {
       var record = records.stream().filter(r -> r.id().equals(m.id())).findFirst().orElseThrow();
       assertThat(record.status()).as(m.id() + " status at " + plant.nowMs()).isEqualTo(m.status());
       var running = plant.smartFactory().runningOn(m.id());
