@@ -303,7 +303,7 @@ public final class OrderService {
   public static boolean available(MachineStatus status) {
     return switch (status) {
       case IDLE, SETUP, RUNNING, BLOCKED -> true;
-      case STOPPED, FAULT, REPAIR, MAINTENANCE -> false;
+      case STOPPED, FAULT, REPAIR, MAINTENANCE, UNKNOWN -> false;
     };
   }
 

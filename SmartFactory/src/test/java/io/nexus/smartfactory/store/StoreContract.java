@@ -126,6 +126,15 @@ public abstract class StoreContract {
   }
 
   @Test
+  void anUnreachableMachineIsStoredLikeEveryOtherState() {
+    machines().changeState("CNC-01", MachineStatus.UNKNOWN, 100);
+    MachineRecord saved = machines().save(new MachineRecord("CNC-01", MachineStatus.UNKNOWN, null, 0));
+    assertThat(machines().machines().getFirst()).isEqualTo(saved);
+    assertThat(machines().intervals("CNC-01", 0, 200)).extracting(StateInterval::status)
+        .containsExactly(MachineStatus.UNKNOWN);
+  }
+
+  @Test
   void changeStateClosesTheOpenIntervalAndIntervalsAreClippedToTheWindow() {
     machines().changeState("CNC-01", MachineStatus.IDLE, 0);
     machines().changeState("CNC-01", MachineStatus.RUNNING, 100);

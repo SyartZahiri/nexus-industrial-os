@@ -74,7 +74,8 @@ public final class Analytics {
         inStatus.put(i.status(), inStatus.get(i.status()) + (i.toMs() - i.fromMs()));
       }
       long running = inStatus.get(MachineStatus.RUNNING);
-      long down = inStatus.get(MachineStatus.FAULT) + inStatus.get(MachineStatus.REPAIR) + inStatus.get(MachineStatus.MAINTENANCE);
+      long down = inStatus.get(MachineStatus.FAULT) + inStatus.get(MachineStatus.REPAIR) + inStatus.get(MachineStatus.MAINTENANCE)
+          + inStatus.get(MachineStatus.UNKNOWN);                 // an unreachable machine does not produce
       long[] w = work.getOrDefault(m.id(), new long[3]);
       double utilization = window <= 0 ? 0 : (double) running / window;
       double availability = window <= 0 ? 1 : (double) (window - down) / window;
