@@ -48,21 +48,24 @@ public class PlantSocket extends TextWebSocketHandler {
   private final JdbcEventLog events;
   private final SimRun run;
   private final EventBus bus;
+  private final SimulationLoop loop;
   private final Map<String, WebSocketSession> clients = new ConcurrentHashMap<>();
   private ScheduledExecutorService sender;
 
   private long sentRun = -1;
   private long sentSeq;
   private String sentFrame;
+  private String sentSim;
   private long sentFrameSimTime = -1;
   private long sentFrameAt;
   private boolean failing;
 
-  public PlantSocket(Plant plant, JdbcEventLog events, SimRun run, EventBus bus) {
+  public PlantSocket(Plant plant, JdbcEventLog events, SimRun run, EventBus bus, SimulationLoop loop) {
     this.plant = plant;
     this.events = events;
     this.run = run;
     this.bus = bus;
+    this.loop = loop;
   }
 
   public PlantSocket start() {
@@ -106,7 +109,8 @@ public class PlantSocket extends TextWebSocketHandler {
         }
       }
       clients.put(session.getId(), new ConcurrentWebSocketSessionDecorator(session, (int) SEND_TIMEOUT_MS, 1_048_576));
-      sentFrame = null;          // the newcomer needs a frame now, even if nothing changed
+      sentFrame = null;          // the newcomer needs a frame and the simulation state now
+      sentSim = null;
     }
   }
 
@@ -130,6 +134,7 @@ public class PlantSocket extends TextWebSocketHandler {
     if (clients.isEmpty()) return;
     String reset = null;
     String frame = null;
+    String sim = null;
     List<JdbcEventLog.Sequenced> fresh;
     synchronized (bus) {
       long currentRun = run.id();
@@ -139,7 +144,11 @@ public class PlantSocket extends TextWebSocketHandler {
         sentRun = currentRun;
         sentSeq = 0;
         sentFrame = null;
+        sentSim = null;
       }
+      String state = new JsonWriter().beginObject().name("type").value("sim").name("running").value(loop.running())
+          .name("speed").value(loop.speed()).name("seed").value(run.seed()).endObject().toString();
+      if (!state.equals(sentSim)) sim = state;
       fresh = events.eventsAfter(currentRun, sentSeq, 1_000);
       long now = System.currentTimeMillis();
       long simTime = plant.nowMs();
@@ -150,6 +159,10 @@ public class PlantSocket extends TextWebSocketHandler {
       }
     }
     if (reset != null) send(reset);
+    if (sim != null) {
+      send(sim);
+      sentSim = sim;
+    }
     if (frame != null && !frame.equals(sentFrame)) {
       send(new JsonWriter().beginObject().name("type").value("frame").name("frame").raw(frame).endObject().toString());
       sentFrame = frame;

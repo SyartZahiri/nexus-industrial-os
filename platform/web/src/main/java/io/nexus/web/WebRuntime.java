@@ -8,6 +8,7 @@ import io.nexus.contracts.event.EventIds;
 import io.nexus.contracts.event.EventTypes;
 import io.nexus.contracts.event.NexusEvent;
 import io.nexus.contracts.event.Payloads;
+import io.nexus.contracts.json.JsonWriter;
 import io.nexus.contracts.memory.MemoryEventLog;
 import io.nexus.contracts.memory.MemoryUnitOfWork;
 import io.nexus.contracts.sim.SeededRandom;
@@ -16,6 +17,7 @@ import io.nexus.flowpilot.FlowPilotSelfTest;
 import io.nexus.plant.Plant;
 import io.nexus.plant.PlantCommands;
 import io.nexus.plant.PlantJson;
+import io.nexus.plant.PlantQueries;
 import io.nexus.plant.PlantRules;
 import io.nexus.plant.Scenario1h;
 import io.nexus.smartfactory.SmartFactorySelfTest;
@@ -118,6 +120,24 @@ public final class WebRuntime {
       for (int i = 0; i < all.size(); i++) if (all.get(i).eventId().equals(afterEventId)) from = i + 1;
     }
     return PlantJson.events(all.subList(from, all.size()));
+  }
+
+  /** Events of the run from position from on (0 = all), each with its position + 1 as seq, as the server sends them. */
+  @JSExport
+  public static String plantEventsFrom(int from) {
+    List<NexusEvent> all = running().events();
+    var w = new JsonWriter().beginArray();
+    for (int i = Math.max(0, from); i < all.size(); i++) {
+      String json = PlantJson.event(all.get(i), true);
+      w.raw("{\"seq\":" + (i + 1) + "," + json.substring(1));
+    }
+    return w.endArray().toString();
+  }
+
+  /** A read-only question as JSON (see PlantQueries); the answer is JSON too. */
+  @JSExport
+  public static String plantQuery(String json) {
+    return PlantQueries.apply(running(), json);
   }
 
   /** A command as JSON (see PlantCommands); the answer is JSON too. */

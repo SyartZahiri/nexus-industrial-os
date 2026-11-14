@@ -35,6 +35,7 @@ class PlantSocketTest {
   @Autowired io.nexus.contracts.event.EventBus bus;
   @Autowired io.nexus.contracts.event.UnitOfWork work;
   @Autowired org.springframework.transaction.support.TransactionTemplate tx;
+  @Autowired SimulationLoop loop;
 
   @BeforeEach
   void freshPlant() {
@@ -116,6 +117,16 @@ class PlantSocketTest {
     plant.smartFactory().createOrder(new NewOrder("FP12", 1, Priority.NORMAL, 3_600_000));
     assertThat(stays.eventsFor(1)).extracting(e -> e.get("type")).contains("order.created");
     stays.session.close();
+  }
+
+  @Test
+  void theSimulationStateIsSentOnConnectAndOnChange() throws Exception {
+    var client = new Client().connect(null);
+    assertThat(client.next("sim")).containsEntry("running", false).containsEntry("seed", 5L);
+    loop.setSpeed(5);
+    assertThat(((Number) client.next("sim").get("speed")).doubleValue()).isEqualTo(5.0);   // JsonWriter writes 5.0 as 5
+    loop.setSpeed(1);
+    client.session.close();
   }
 
   @Test
