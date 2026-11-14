@@ -184,12 +184,15 @@ class PlantSocketTest {
   @Test
   void clientsBeyondTheLimitAreTurnedAway() throws Exception {
     List<Client> admitted = new ArrayList<>();
-    for (int i = 0; i < PlantSocket.MAX_CLIENTS; i++) admitted.add(new Client().connect(null));
-    var extra = new Client().connect(null);
-    long deadline = System.currentTimeMillis() + 5_000;
-    while (extra.session.isOpen() && System.currentTimeMillis() < deadline) Thread.sleep(50);
-    assertThat(extra.session.isOpen()).as("the client over the limit is closed").isFalse();
-    for (Client c : admitted) c.session.close();
+    try {
+      for (int i = 0; i < PlantSocket.MAX_CLIENTS; i++) admitted.add(new Client().connect(null));
+      var extra = new Client().connect(null);
+      long deadline = System.currentTimeMillis() + 5_000;
+      while (extra.session.isOpen() && System.currentTimeMillis() < deadline) Thread.sleep(50);
+      assertThat(extra.session.isOpen()).as("the client over the limit is closed").isFalse();
+    } finally {
+      for (Client c : admitted) c.session.close();      // never leave 50 clients behind for the next test
+    }
   }
 
   @Test
