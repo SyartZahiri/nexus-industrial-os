@@ -109,14 +109,17 @@ class SimController {
     return PlantJson.frame(plant.frame());
   }
 
-  /** A command in the core's JSON (see PlantCommands): the same format and checks as in the browser. */
-  @PostMapping(value = "/commands", produces = MediaType.APPLICATION_JSON_VALUE)
+  /**
+   * A command in the core's JSON (see PlantCommands): the same format and checks as in the browser. Only
+   * application/json: a foreign page cannot send that without a CORS preflight, which this server refuses.
+   */
+  @PostMapping(value = "/commands", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
   ResponseEntity<String> command(@RequestBody String json) {
     return answer(PlantCommands.apply(plant, json));
   }
 
   /** A read-only question in the core's JSON (see PlantQueries). */
-  @PostMapping(value = "/queries", produces = MediaType.APPLICATION_JSON_VALUE)
+  @PostMapping(value = "/queries", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
   ResponseEntity<String> query(@RequestBody String json) {
     return answer(PlantQueries.apply(plant, json));
   }
