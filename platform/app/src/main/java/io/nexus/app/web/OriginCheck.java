@@ -13,34 +13,51 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * The API has no login (Spec 16). So that a page on another site cannot change the plant through a visitor's
- * browser (cross-site request forgery), every request that changes something must come from this server's own page,
- * from an origin in nexus.ws.allowed-origins (the Vite dev servers in the embedded profile), or without an Origin
- * header at all (curl, tests, other servers; browsers always send one on cross-site writes).
+ * The API has no login (Spec 16) and is meant for this computer. Two checks keep other web pages out:
+ * <ul>
+ *   <li>Host: only localhost and the hosts in nexus.allowed-hosts are served, for every request. Otherwise a domain
+ *       that resolves to 127.0.0.1 (DNS rebinding) could read and steer the plant as if it were this page.</li>
+ *   <li>Origin: a request that changes something must come from this server's own page, from an origin in
+ *       nexus.ws.allowed-origins (the Vite dev servers in the embedded profile), or without an Origin at all (curl,
+ *       tests, other servers; browsers always send one on cross-site writes).</li>
+ * </ul>
  */
 @Component
 class OriginCheck extends OncePerRequestFilter {
   private static final Set<String> READING = Set.of("GET", "HEAD", "OPTIONS");
+  private static final Set<String> LOCAL_HOSTS = Set.of("localhost", "127.0.0.1", "[::1]", "::1");
 
-  private final List<String> allowed;
+  private final List<String> allowedOrigins;
+  private final List<String> allowedHosts;
 
-  OriginCheck(@Value("${nexus.ws.allowed-origins:}") List<String> allowed) {
-    this.allowed = allowed;
+  OriginCheck(@Value("${nexus.ws.allowed-origins:}") List<String> allowedOrigins,
+              @Value("${nexus.allowed-hosts:}") List<String> allowedHosts) {
+    this.allowedOrigins = allowedOrigins;
+    this.allowedHosts = allowedHosts;
   }
 
   @Override
   protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
       throws ServletException, IOException {
+    String host = request.getServerName();
+    if (!LOCAL_HOSTS.contains(host) && !allowedHosts.contains(host)) {
+      refuse(response, "Unbekannter Host");
+      return;
+    }
     String origin = request.getHeader("Origin");
     if (origin == null || READING.contains(request.getMethod()) || origin.equals(ownOrigin(request))
-        || allowed.contains(origin)) {
+        || allowedOrigins.contains(origin)) {
       chain.doFilter(request, response);
       return;
     }
+    refuse(response, "Fremde Seite darf die Anlage nicht steuern");
+  }
+
+  private static void refuse(HttpServletResponse response, String detail) throws IOException {
     response.setStatus(HttpServletResponse.SC_FORBIDDEN);
     response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
     response.setCharacterEncoding("UTF-8");
-    response.getWriter().write("{\"status\":403,\"title\":\"Forbidden\",\"detail\":\"Fremde Seite darf die Anlage nicht steuern\"}");
+    response.getWriter().write("{\"status\":403,\"title\":\"Forbidden\",\"detail\":\"" + detail + "\"}");
   }
 
   private static String ownOrigin(HttpServletRequest r) {
