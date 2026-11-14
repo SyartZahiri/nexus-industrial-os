@@ -73,6 +73,30 @@ class SimApiTest {
     assertThat(plant.nowMs()).isEqualTo(t);
   }
 
+  /** Review I4 / Focus 2: a reset while the loop runs starts a fresh run, and the loop keeps running. */
+  @Test
+  void resetWhileRunningKeepsTheLoopRunningOnAFreshRun() throws Exception {
+    send("PUT", "/api/v1/sim/speed", "{\"speed\":25}");
+    send("POST", "/api/v1/sim/play", null);
+    Thread.sleep(500);
+    long before = plant.nowMs();
+    String runBefore = send("GET", "/api/v1/sim", null).body().replaceAll(".*\"runId\":(\\d+).*", "$1");
+    assertThat(send("POST", "/api/v1/sim/reset", "{\"seed\":7}").statusCode()).isEqualTo(204);
+    assertThat(loop.running()).isTrue();
+    String runAfter = send("GET", "/api/v1/sim", null).body().replaceAll(".*\"runId\":(\\d+).*", "$1");
+    assertThat(runAfter).isNotEqualTo(runBefore);
+    assertThat(plant.nowMs()).isLessThan(before);
+    Thread.sleep(300);
+    assertThat(plant.nowMs()).as("the clock runs on in the new run").isPositive();
+  }
+
+  @Test
+  void speedOutOfRangeNamesTheField() throws Exception {
+    var r = send("PUT", "/api/v1/sim/speed", "{\"speed\":30}");
+    assertThat(r.statusCode()).isEqualTo(400);
+    assertThat(r.body()).contains("\"errors\"").contains("speed");
+  }
+
   @Test
   void invalidInputIs400() throws Exception {
     assertThat(send("PUT", "/api/v1/sim/speed", "{\"speed\":0}").statusCode()).isEqualTo(400);

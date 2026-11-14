@@ -2,6 +2,7 @@ package io.nexus.app.plant;
 
 import io.nexus.app.event.JdbcEventLog;
 import io.nexus.app.event.SimRun;
+import io.nexus.contracts.event.EventBus;
 import io.nexus.contracts.json.JsonWriter;
 import io.nexus.plant.Plant;
 import io.nexus.plant.PlantJson;
@@ -24,31 +25,44 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
  * The live stream of the plant under /ws. One sender thread, every 100 ms:
  * <ul>
  *   <li>{"type":"reset","seed":…} when a new run started,</li>
- *   <li>{"type":"frame","frame":{…}} when the frame changed (the same JSON the browser runtime produces),</li>
- *   <li>{"type":"events","items":[…]} with every event of the current run since the last message.</li>
+ *   <li>{"type":"frame","frame":{…}} when the frame changed, at least once a second (the same JSON the browser
+ *       runtime produces),</li>
+ *   <li>{"type":"events","items":[{"seq":…,"eventId":…,…}]} with every event of the current run since the last
+ *       message; a client that reconnects asks GET /api/v1/events?after=&lt;last seq&gt; for the gap.</li>
  * </ul>
- * Each client is wrapped so sending never blocks the others: a client that cannot keep up (send time over 2 s or
- * more than 1 MB queued) is disconnected. New clients get the current frame first and events from then on; the
- * history is in GET /api/v1/events.
+ * Frame and events are read under the platform lock: while it is free, no publishing transaction is open, so no
+ * event with a lower seq can still become visible later and be skipped.
+ *
+ * <p>Sending never blocks for long: each send is limited to 2 s, a client that cannot keep up is closed. At most
+ * {@link #MAX_CLIENTS} clients are served; the API has no login (Spec 16), the limit keeps a careless or hostile
+ * page from exhausting the server.
  */
 public class PlantSocket extends TextWebSocketHandler {
   private static final Logger log = LoggerFactory.getLogger(PlantSocket.class);
   static final long INTERVAL_MS = 100;
+  public static final int MAX_CLIENTS = 50;
+  private static final long FRAME_REFRESH_MS = 1_000;
+  private static final long SEND_TIMEOUT_MS = 2_000;
 
   private final Plant plant;
   private final JdbcEventLog events;
   private final SimRun run;
+  private final EventBus bus;
   private final Map<String, WebSocketSession> clients = new ConcurrentHashMap<>();
   private ScheduledExecutorService sender;
 
   private long sentRun = -1;
   private long sentSeq;
   private String sentFrame;
+  private long sentFrameSimTime = -1;
+  private long sentFrameAt;
+  private boolean failing;
 
-  public PlantSocket(Plant plant, JdbcEventLog events, SimRun run) {
+  public PlantSocket(Plant plant, JdbcEventLog events, SimRun run, EventBus bus) {
     this.plant = plant;
     this.events = events;
     this.run = run;
+    this.bus = bus;
   }
 
   public PlantSocket start() {
@@ -62,13 +76,36 @@ public class PlantSocket extends TextWebSocketHandler {
   }
 
   public void stop() {
-    if (sender != null) sender.shutdownNow();
+    if (sender == null) return;
+    sender.shutdownNow();
+    try {
+      sender.awaitTermination(2, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   @Override
-  public void afterConnectionEstablished(WebSocketSession session) {
-    clients.put(session.getId(), new ConcurrentWebSocketSessionDecorator(session, 2_000, 1_048_576));
+  public void afterConnectionEstablished(WebSocketSession session) throws IOException {
+    // Tomcat blocks a send for up to 20 s by default; one stalled tab must not hold up everyone else that long
+    if (session instanceof org.springframework.web.socket.adapter.standard.StandardWebSocketSession standard
+        && standard.getNativeSession() != null) {
+      standard.getNativeSession().getUserProperties()
+          .put("org.apache.tomcat.websocket.BLOCKING_SEND_TIMEOUT", SEND_TIMEOUT_MS);
+    }
     synchronized (this) {
+      if (clients.size() >= MAX_CLIENTS) {
+        session.close(CloseStatus.SERVICE_OVERLOAD);
+        return;
+      }
+      if (clients.isEmpty()) {
+        // the first listener starts at the newest event; older ones are history (GET /api/v1/events)
+        synchronized (bus) {
+          sentRun = run.id();
+          sentSeq = events.lastSeq(sentRun);
+        }
+      }
+      clients.put(session.getId(), new ConcurrentWebSocketSessionDecorator(session, (int) SEND_TIMEOUT_MS, 1_048_576));
       sentFrame = null;          // the newcomer needs a frame now, even if nothing changed
     }
   }
@@ -81,37 +118,54 @@ public class PlantSocket extends TextWebSocketHandler {
   private void broadcastSafely() {
     try {
       broadcast();
-    } catch (RuntimeException e) {
-      log.warn("WebSocket-Versand fehlgeschlagen", e);  // the next tick tries again
+      if (failing) log.info("WebSocket-Versand läuft wieder");
+      failing = false;
+    } catch (Throwable e) {                             // the sender thread must survive anything
+      if (!failing) log.warn("WebSocket-Versand fehlgeschlagen; weitere Fehler bis zur Erholung ohne Log", e);
+      failing = true;
     }
   }
 
   private synchronized void broadcast() {
-    long currentRun = run.id();
-    if (clients.isEmpty()) {
-      // nobody listens: only keep the position, so a newcomer does not get the whole history
-      sentRun = currentRun;
-      sentSeq = events.lastSeq(currentRun);
-      return;
+    if (clients.isEmpty()) return;
+    String reset = null;
+    String frame = null;
+    List<JdbcEventLog.Sequenced> fresh;
+    synchronized (bus) {
+      long currentRun = run.id();
+      if (currentRun != sentRun) {
+        reset = new JsonWriter().beginObject().name("type").value("reset").name("seed").value(run.seed())
+            .endObject().toString();
+        sentRun = currentRun;
+        sentSeq = 0;
+        sentFrame = null;
+      }
+      fresh = events.eventsAfter(currentRun, sentSeq, 1_000);
+      long now = System.currentTimeMillis();
+      long simTime = plant.nowMs();
+      if (sentFrame == null || simTime != sentFrameSimTime || !fresh.isEmpty() || now - sentFrameAt >= FRAME_REFRESH_MS) {
+        frame = PlantJson.frame(plant.frame());
+        sentFrameSimTime = simTime;
+        sentFrameAt = now;
+      }
     }
-    if (currentRun != sentRun) {
-      if (sentRun != -1) send(new JsonWriter().beginObject().name("type").value("reset").name("seed").value(run.seed())
-          .endObject().toString());
-      sentRun = currentRun;
-      sentSeq = 0;
-      sentFrame = null;
-    }
-    String frame = PlantJson.frame(plant.frame());
-    if (!frame.equals(sentFrame)) {
+    if (reset != null) send(reset);
+    if (frame != null && !frame.equals(sentFrame)) {
       send(new JsonWriter().beginObject().name("type").value("frame").name("frame").raw(frame).endObject().toString());
       sentFrame = frame;
     }
-    List<JdbcEventLog.Sequenced> fresh = events.eventsAfter(currentRun, sentSeq, 1_000);
     if (!fresh.isEmpty()) {
       var w = new JsonWriter().beginObject().name("type").value("events").name("items").beginArray();
-      for (JdbcEventLog.Sequenced e : fresh) w.raw(PlantJson.event(e.event(), true));
+      for (JdbcEventLog.Sequenced e : fresh) {
+        try {
+          String json = PlantJson.event(e.event(), true);
+          w.raw("{\"seq\":" + e.seq() + "," + json.substring(1));
+        } catch (RuntimeException unwritable) {
+          log.warn("Ereignis {} nicht als JSON darstellbar, übersprungen", e.seq(), unwritable);
+        }
+        sentSeq = e.seq();                              // a broken event never stalls the stream
+      }
       send(w.endArray().endObject().toString());
-      sentSeq = fresh.get(fresh.size() - 1).seq();
     }
   }
 
@@ -120,8 +174,14 @@ public class PlantSocket extends TextWebSocketHandler {
     for (WebSocketSession client : clients.values()) {
       try {
         if (client.isOpen()) client.sendMessage(message);
-      } catch (IOException | IllegalStateException e) {
-        clients.remove(client.getId());                 // closed or too slow; the decorator already closed it
+        else clients.remove(client.getId());
+      } catch (Exception tooSlowOrGone) {                 // includes the decorator's SessionLimitExceededException
+        clients.remove(client.getId());
+        try {
+          client.close(CloseStatus.SESSION_NOT_RELIABLE);
+        } catch (IOException | RuntimeException alreadyClosed) {
+          // nothing left to close
+        }
       }
     }
   }

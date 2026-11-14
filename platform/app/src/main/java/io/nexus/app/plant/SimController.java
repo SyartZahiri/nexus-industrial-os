@@ -38,7 +38,7 @@ class SimController {
 
   record SimState(long simTimeMs, boolean running, double speed, long seed, long runId, RulesView rules) {}
 
-  record SpeedInput(@NotNull Double speed) {}
+  record SpeedInput(@NotNull @DecimalMin("0.25") @DecimalMax("25") Double speed) {}
 
   record ResetInput(Long seed) {}
 

@@ -60,6 +60,30 @@ class SimulationLoopTest {
     assertThat(total()).isEqualTo(SimulationLoop.MAX_STEPS_PER_TICK * 100L + 1_200);   // owed time was dropped
   }
 
+  /** Review I3: after pause returns, no further step runs, also not the rest of the current tick. */
+  @Test
+  void pauseStopsWithinTheCurrentTick() {
+    var stepping = new SimulationLoop[1];
+    stepping[0] = new SimulationLoop(ms -> {
+      advanced.add(ms);
+      stepping[0].pause();                                  // pause arrives while the tick is running
+    }, reported::add);
+    stepping[0].play();
+    stepping[0].setSpeed(25);
+    stepping[0].tick(50);                                   // twelve steps owed
+    assertThat(advanced).containsExactly(100L);
+  }
+
+  /** Review I2: even a report that fails with an Error must not escape the tick and kill the loop thread. */
+  @Test
+  void aFailingReportDoesNotEscapeTheTick() {
+    var broken = new SimulationLoop(ms -> { throw new OutOfMemoryError("Schritt"); },
+        t -> { throw new OutOfMemoryError("Meldung"); });
+    broken.play();
+    broken.tick(100);
+    assertThat(broken.running()).isFalse();
+  }
+
   @Test
   void aFailingStepPausesTheLoopAndIsReported() {
     var failing = new SimulationLoop(ms -> { throw new IllegalStateException("kaputt"); }, reported::add);

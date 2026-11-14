@@ -6,6 +6,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Drives the plant on the server: one thread, every 50 ms of real time, advances the simulation by real time ×
@@ -13,9 +15,11 @@ import java.util.function.LongConsumer;
  *
  * <p>Starts paused. After a stall (garbage collection, a slow query) at most {@link #MAX_STEPS_PER_TICK} steps run
  * and the rest of the owed time is dropped: the plant stays responsive instead of racing to catch up. A step that
- * throws pauses the loop and is reported; the loop can be started again.
+ * throws pauses the loop and is reported; the loop can be started again. Nothing a step or a report throws ever
+ * reaches the scheduler, which would otherwise stop running the loop without a word.
  */
 public class SimulationLoop {
+  private static final Logger log = LoggerFactory.getLogger(SimulationLoop.class);
   public static final int MAX_STEPS_PER_TICK = 50;
   static final long TICK_MS = 50;
   private static final long STEP_MS = 100;
@@ -41,19 +45,29 @@ public class SimulationLoop {
     });
     long[] last = {System.nanoTime()};
     executor.scheduleAtFixedRate(() -> {
-      long now = System.nanoTime();
-      long elapsed = (now - last[0]) / 1_000_000;
-      last[0] = now;
-      tick(elapsed);
+      try {
+        long elapsed = (System.nanoTime() - last[0]) / 1_000_000;
+        last[0] += elapsed * 1_000_000;                 // keep the sub-millisecond rest: no drift of the clock
+        tick(elapsed);
+      } catch (Throwable t) {
+        log.error("Simulationstakt fehlgeschlagen", t);
+      }
     }, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS);
     return this;
   }
 
+  /** Stops the thread and waits briefly, so no step runs while the application shuts down. */
   public void stop() {
-    if (executor != null) executor.shutdownNow();
+    if (executor == null) return;
+    executor.shutdownNow();
+    try {
+      executor.awaitTermination(2, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
-  /** One tick of the clock: realMs of real time passed. */
+  /** One tick of the clock: realMs of real time passed. Steps one by one, so a pause takes effect at once. */
   synchronized void tick(long realMs) {
     if (!running) {
       owedMs = 0;
@@ -67,13 +81,18 @@ public class SimulationLoop {
     } else {
       owedMs -= steps * STEP_MS;
     }
-    if (steps == 0) return;
-    try {
-      advance.accept(steps * STEP_MS);
-    } catch (Throwable t) {           // the loop thread must survive anything; the plant pauses instead
-      running = false;
-      owedMs = 0;
-      onFailure.accept(t);
+    for (long i = 0; i < steps && running; i++) {
+      try {
+        advance.accept(STEP_MS);
+      } catch (Throwable t) {                           // the loop thread must survive anything; the plant pauses
+        running = false;
+        owedMs = 0;
+        try {
+          onFailure.accept(t);
+        } catch (Throwable reportFailed) {
+          log.error("Meldung einer angehaltenen Simulation fehlgeschlagen", reportFailed);
+        }
+      }
     }
   }
 
@@ -81,7 +100,8 @@ public class SimulationLoop {
     running = true;
   }
 
-  public void pause() {
+  /** Returns once the current tick has ended: after this, no further step runs until play. */
+  public synchronized void pause() {
     running = false;
   }
 

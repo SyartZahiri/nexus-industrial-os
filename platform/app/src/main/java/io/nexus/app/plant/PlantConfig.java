@@ -36,15 +36,15 @@ class PlantConfig {
     return new SimulationLoop(plant::advance, failure -> report(bus, failure)).start();
   }
 
-  private static void report(EventBus bus, Throwable failure) {
+  static void report(EventBus bus, Throwable failure) {
     LOG.error("Simulation angehalten", failure);
     String type = failure.getClass().getName();
     try {
       synchronized (bus) {
         bus.publish(EventTypes.DECISION, "plant", Severity.ERROR, null, new Payloads.Decision("Simulation",
-            "angehalten", java.util.List.of(), "Schritt fehlgeschlagen: " + type.substring(type.lastIndexOf('.') + 1)));
+            "angehalten", java.util.List.of(), "fehlgeschlagen: " + type.substring(type.lastIndexOf('.') + 1)));
       }
-    } catch (RuntimeException reportFailed) {
+    } catch (Throwable reportFailed) {                 // the caller is a loop thread that must survive
       LOG.error("Meldung nicht gespeichert", reportFailed);
     }
   }

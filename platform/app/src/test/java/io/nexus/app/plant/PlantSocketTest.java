@@ -32,6 +32,9 @@ class PlantSocketTest {
   @Value("${local.server.port}") int port;
   @Autowired Plant plant;
   @Autowired PlantReset reset;
+  @Autowired io.nexus.contracts.event.EventBus bus;
+  @Autowired io.nexus.contracts.event.UnitOfWork work;
+  @Autowired org.springframework.transaction.support.TransactionTemplate tx;
 
   @BeforeEach
   void freshPlant() {
@@ -123,6 +126,59 @@ class PlantSocketTest {
     assertThat(client.next("reset")).containsEntry("seed", 99L);
     client.next("frame");
     client.session.close();
+  }
+
+  /**
+   * Review C1: an outer unit inserts event A (seq n, not yet visible), an inner unit commits B (seq n+1) first.
+   * A reader without the lock would move past n and never send A.
+   */
+  @Test
+  void eventsCommittedOutOfInsertOrderAreNotLost() throws Exception {
+    var client = new Client().connect(null);
+    client.next("frame");
+    Thread publisher = new Thread(() -> {
+      synchronized (bus) {
+        tx.executeWithoutResult(s -> {
+          publish("PO-OUTER");
+          work.inNewTransaction(() -> publish("PO-INNER"));
+          try {
+            Thread.sleep(600);                               // several sender ticks see only the inner event
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+        });
+      }
+    });
+    publisher.start();
+    publisher.join();
+    var types = client.eventsFor(2).stream().map(e -> e.get("correlationId")).toList();
+    assertThat(types).contains("PO-OUTER", "PO-INNER");
+    client.session.close();
+  }
+
+  private void publish(String orderId) {
+    bus.publish(io.nexus.contracts.event.EventTypes.ORDER_CREATED, "test", io.nexus.contracts.Domain.Severity.INFO,
+        orderId, new io.nexus.contracts.event.Payloads.OrderCreated(orderId, "FP12", 1, Priority.NORMAL, 0));
+  }
+
+  @Test
+  void everyEventItemCarriesItsSeqForGapFilling() throws Exception {
+    var client = new Client().connect(null);
+    client.next("frame");
+    plant.smartFactory().createOrder(new NewOrder("FP12", 1, Priority.NORMAL, 3_600_000));
+    assertThat(client.eventsFor(1)).allSatisfy(e -> assertThat(e.get("seq")).isInstanceOf(Long.class));
+    client.session.close();
+  }
+
+  @Test
+  void clientsBeyondTheLimitAreTurnedAway() throws Exception {
+    List<Client> admitted = new ArrayList<>();
+    for (int i = 0; i < PlantSocket.MAX_CLIENTS; i++) admitted.add(new Client().connect(null));
+    var extra = new Client().connect(null);
+    long deadline = System.currentTimeMillis() + 5_000;
+    while (extra.session.isOpen() && System.currentTimeMillis() < deadline) Thread.sleep(50);
+    assertThat(extra.session.isOpen()).as("the client over the limit is closed").isFalse();
+    for (Client c : admitted) c.session.close();
   }
 
   @Test

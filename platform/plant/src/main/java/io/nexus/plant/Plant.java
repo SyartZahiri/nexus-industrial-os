@@ -177,9 +177,7 @@ public final class Plant {
       var random = new SeededRandom(seed);
       simulation = simulationFor(random, smartFactory);
       orders = new OrderGenerator(random.fork("orders"));
-      PlantRules current = rules;
-      rules = null;
-      applyRules(current);
+      applyRules(rules);
     }
   }
 
@@ -191,7 +189,8 @@ public final class Plant {
 
   private void applyRules(PlantRules newRules) {
     simulation.setRules(newRules.machines());
-    if (rules == null || rules.dispatchRule() != newRules.dispatchRule()) smartFactory.setDispatchRule(newRules.dispatchRule());
+    // only on a change: a new plant on default rules commands nothing while it is being built (server start)
+    if (smartFactory.dispatchRule() != newRules.dispatchRule()) smartFactory.setDispatchRule(newRules.dispatchRule());
     rules = newRules;
   }
 
