@@ -34,7 +34,7 @@ export const STATUS_SHORT: Record<MachineStatus, string> = {
   FAULT: 'Störung',
   REPAIR: 'Reparatur',
   MAINTENANCE: 'Wartung',
-  UNKNOWN: '?',
+  UNKNOWN: 'Unbekannt',
 };
 
 export const CONVEYOR_COLOR: Record<ConveyorStatus, string> = {

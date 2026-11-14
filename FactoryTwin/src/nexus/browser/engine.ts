@@ -11,7 +11,7 @@ export interface NexusCore {
 }
 
 export type WorkerRequest =
-  | { id: number; kind: 'hello' }
+  | { id: number; kind: 'hello'; seed?: number }
   | { id: number; kind: 'command'; body: Command }
   | { id: number; kind: 'query'; body: Query }
   | { id: number; kind: 'play' }

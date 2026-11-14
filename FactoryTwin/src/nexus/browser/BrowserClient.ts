@@ -14,9 +14,8 @@ export class BrowserClient implements NexusClient {
   private listener: (m: NexusMessage) => void = () => {};
 
   constructor() {
-    const url = new URL('./nexus.worker.ts', import.meta.url);
-    url.search = window.location.search; // ?seed= reaches the worker
-    this.worker = new Worker(url, { type: 'module' });
+    // Vite bundles the worker only for exactly this form; the seed travels with the first message (hello)
+    this.worker = new Worker(new URL('./nexus.worker.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e: MessageEvent<{ id?: number; answer?: unknown; message?: NexusMessage }>) => {
       if (e.data.message) this.listener(e.data.message);
       if (e.data.id !== undefined) {
@@ -37,7 +36,8 @@ export class BrowserClient implements NexusClient {
   connect(onMessage: (m: NexusMessage) => void): () => void {
     this.listener = onMessage;
     onMessage({ type: 'connection', state: 'open' });
-    void this.request({ kind: 'hello' });
+    const seed = Number(new URLSearchParams(window.location.search).get('seed'));
+    void this.request({ kind: 'hello', seed: Number.isInteger(seed) && seed > 0 ? seed : undefined });
     return () => {
       this.listener = () => {};
       this.worker.terminate();

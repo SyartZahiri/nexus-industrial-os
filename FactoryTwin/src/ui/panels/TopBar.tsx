@@ -1,4 +1,4 @@
-import { command, useFactory } from '../../store/factoryStore';
+import { control, useFactory } from '../../store/factoryStore';
 import { clock, dayOf, shiftOf } from '../format';
 import { useEffect, useState } from 'react';
 import { Button, cx, Icon, Segmented } from '../primitives';
@@ -21,7 +21,7 @@ function ResetButton({ seed }: { seed: number }) {
           autoFocus
           onClick={() => {
             setAsking(false);
-            command((e) => e.reset());
+            void control.reset();
           }}
         >
           Ja
@@ -42,33 +42,25 @@ function ResetButton({ seed }: { seed: number }) {
 export const SPEEDS = [1, 2, 5, 10, 25];
 
 export function TopBar() {
-  const time = useFactory((s) => s.snap.time);
-  const running = useFactory((s) => s.snap.running);
-  const speed = useFactory((s) => s.snap.speed);
-  const seed = useFactory((s) => s.snap.seed);
-  const alarms = useFactory((s) => s.snap.alarms);
-  const connectors = useFactory((s) => s.connectors);
+  const time = useFactory((s) => s.scene?.time ?? 0);
+  const running = useFactory((s) => s.sim.running);
+  const speed = useFactory((s) => s.sim.speed);
+  const seed = useFactory((s) => s.sim.seed);
+  const errors = useFactory((s) => s.events.filter((e) => e.severity === 'ERROR').length);
+  const warnings = useFactory((s) => s.events.filter((e) => e.severity === 'WARNING').length);
+  const mode = useFactory((s) => s.mode);
+  const connection = useFactory((s) => s.connection);
+  const notice = useFactory((s) => s.notice);
+  const dismissNotice = useFactory((s) => s.dismissNotice);
   const quality = useFactory((s) => s.quality);
   const setQuality = useFactory((s) => s.setQuality);
   const toggle = useFactory((s) => s.toggle);
-  const leftOpen = useFactory((s) => s.leftOpen);
   const rightOpen = useFactory((s) => s.rightOpen);
   const setRightTab = useFactory((s) => s.setRightTab);
-  const errors = alarms.filter((a) => a.severity === 'error').length;
-  const warnings = alarms.length - errors;
-  const unacked = alarms.filter((a) => !a.acknowledged).length;
-
   return (
+    <>
     <header className="safe-top relative z-30 flex min-h-12 shrink-0 items-center gap-2 border-b border-line bg-ink-1/95 px-2 backdrop-blur md:gap-3 md:px-3">
       <h1 className="sr-only">FactoryTwin, Digital Twin der Smart Factory</h1>
-      <button
-        onClick={() => toggle('leftOpen')}
-        className={cx('rounded p-1.5 text-txt-3 hover:bg-white/5 hover:text-txt-1', leftOpen && 'text-txt-1')}
-        title="Kennzahlen-Panel ein/aus"
-        aria-label="Kennzahlen-Panel umschalten"
-      >
-        {Icon.panelLeft}
-      </button>
       <div className="flex min-w-0 items-center gap-2.5">
         <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-teal-400/30 bg-teal-400/10">
           <svg viewBox="0 0 32 32" className="h-4 w-4">
@@ -95,32 +87,17 @@ export function TopBar() {
       <div className="ml-auto flex items-center gap-1.5 md:ml-4">
         <Button
           variant={running ? 'default' : 'primary'}
-          onClick={() => command((e) => (running ? e.pause() : e.play()))}
+          onClick={() => void (running ? control.pause() : control.play())}
           title={running ? 'Pausieren (Leertaste)' : 'Starten (Leertaste)'}
           className="w-[84px]"
         >
           {running ? Icon.pause : Icon.play}
           {running ? 'Pause' : 'Start'}
         </Button>
-        <Button
-          variant="ghost"
-          size="md"
-          disabled={running}
-          onClick={() =>
-            command((e) => {
-              for (let i = 0; i < 100; i++) e.step(0.1);
-            })
-          }
-          title="10 s Simulationszeit vorspulen (nur im Pausemodus)"
-          aria-label="10 Sekunden vorspulen"
-          className="hidden sm:inline-flex"
-        >
-          {Icon.step}
-        </Button>
         <div className="hidden sm:block">
           <Segmented
             value={speed}
-            onChange={(v) => command((e) => e.setSpeed(v))}
+            onChange={(v) => void control.setSpeed(v)}
             ariaLabel="Simulationsgeschwindigkeit"
             options={SPEEDS.map((s) => ({ value: s, label: `${s}×`, title: `Simulationsgeschwindigkeit ${s}×` }))}
           />
@@ -129,7 +106,7 @@ export function TopBar() {
           aria-label="Geschwindigkeit"
           className="h-8 rounded-md border border-line-2 bg-ink-3 px-1 text-xs text-txt-1 sm:hidden"
           value={speed}
-          onChange={(e) => command((en) => en.setSpeed(Number(e.target.value)))}
+          onChange={(e) => void control.setSpeed(Number(e.target.value))}
         >
           {SPEEDS.map((s) => (
             <option key={s} value={s}>
@@ -144,9 +121,9 @@ export function TopBar() {
 
       {/* alarms */}
       <button
-        onClick={() => useFactory.getState().showLog('alarms')}
+        onClick={() => setRightTab('events')}
         className="hidden items-center gap-2 whitespace-nowrap rounded-md border border-line px-2 py-1 text-[11px] hover:bg-white/5 lg:flex"
-        title="Aktive Alarme im Ereignisprotokoll anzeigen"
+        title="Fehler und Warnungen der letzten Ereignisse anzeigen"
       >
         <span className={cx('flex items-center gap-1', errors ? 'text-red-300' : 'text-txt-3')}>
           {Icon.alert}
@@ -156,20 +133,22 @@ export function TopBar() {
           <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
           <span className="font-mono tnum">{warnings}</span>
         </span>
-        {unacked > 0 && <span className="rounded bg-red-500/20 px-1 font-mono text-[10px] text-red-200">{unacked} neu</span>}
       </button>
 
-      {/* integrations */}
-      <button onClick={() => setRightTab('integration')} className="hidden items-center gap-2 rounded-md px-2 py-1 text-[11px] text-txt-3 hover:bg-white/5 xl:flex" title="Schnittstellen">
-        {connectors.map((c) => (
-          <span key={c.id} className="flex items-center gap-1">
-            <span
-              className={cx('h-1.5 w-1.5 rounded-full', c.status === 'connected' ? 'bg-emerald-400' : c.status === 'connecting' ? 'bg-amber-400' : 'bg-slate-600')}
-            />
-            {c.label}
-          </span>
-        ))}
-      </button>
+      {/* runtime and connection (Spec 20: the interface names the active mode) */}
+      <span
+        className="hidden items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-txt-3 xl:flex"
+        title={mode === 'browser' ? 'Java-Kern im Browser (Web Worker)' : 'Server mit PostgreSQL und OPC UA'}
+      >
+        <span
+          className={cx(
+            'h-1.5 w-1.5 rounded-full',
+            connection === 'open' ? 'bg-emerald-400' : connection === 'connecting' ? 'bg-amber-400' : 'bg-red-500',
+          )}
+        />
+        {mode === 'browser' ? 'Browser' : 'Server'}
+        {connection === 'closed' && ' · getrennt'}
+      </span>
 
       <div className="hidden lg:block">
         <Segmented
@@ -194,5 +173,14 @@ export function TopBar() {
         {Icon.panelRight}
       </button>
     </header>
+    {notice && (
+      <div role="alert" className="relative z-30 flex items-center gap-3 border-b border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[12px] text-red-200">
+        <span className="min-w-0 flex-1">{notice}</span>
+        <Button variant="ghost" size="sm" onClick={dismissNotice} aria-label="Meldung schliessen">
+          Schliessen
+        </Button>
+      </div>
+    )}
+    </>
   );
 }
