@@ -124,4 +124,48 @@ class ScenariosTest {
     assertThat(run).containsEntry("state", "FAILED");
     assertThat(texts(run)).last().asString().contains("Keine CNC");
   }
+
+  @Test
+  void aShortageStopsTheOrderBeforeReservation() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    assertThat(start(p, "C")).containsEntry("ok", true);
+    var run = untilDone(p, 30 * MIN);
+    assertThat(run).containsEntry("state", "PASSED");
+    assertThat(p.smartFactory().order((String) run.get("orderId")).status().name()).isIn("SHORTAGE", "MATERIAL_PENDING", "RELEASED");
+    assertThat(texts(run)).anyMatch(t -> t.contains("Wareneingang"));
+  }
+
+  @Test
+  void shortageNeverBooksBelowZero() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    // empty the first material of the first product completely before the scenario
+    String product = io.nexus.smartfactory.master.SmartFactoryMasterData.products().get(0).id();
+    String material = p.smartFactory().catalog().demandFor(product, 1).get(0).materialId();
+    for (var line : p.flowPilot().stock()) {
+      if (line.materialId().equals(material) && line.available() > 0) p.flowPilot().issue(material, line.locationId(), line.available());
+    }
+    assertThat(start(p, "C")).containsEntry("ok", true);
+    assertThat(p.flowPilot().stock()).allSatisfy(l -> assertThat(l.onHand()).isNotNegative());
+    assertThat(untilDone(p, 30 * MIN)).containsEntry("state", "PASSED");
+  }
+
+  @Test
+  void anExpressOrderShiftsLaterOrders() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    p.advance(20 * MIN);
+    assertThat(start(p, "D")).containsEntry("ok", true);
+    var run = untilDone(p, 5 * MIN);
+    assertThat(run).containsEntry("state", "PASSED");
+    assertThat(texts(run)).anyMatch(t -> t.endsWith("min später")); // at least one order really moved
+    assertThat(texts(run)).last().asString().endsWith("Aufträge verschoben");
+  }
+
+  @Test
+  void anExpressOrderAloneShiftsNothing() {
+    Plant p = Plant.inMemory(7, Scenario1h.rules()); // no other orders
+    assertThat(start(p, "D")).containsEntry("ok", true);
+    var run = untilDone(p, 5 * MIN);
+    assertThat(run).containsEntry("state", "PASSED");
+    assertThat(texts(run)).last().isEqualTo("Kein anderer Auftrag verschoben");
+  }
 }

@@ -11,7 +11,9 @@ import io.nexus.contracts.json.JsonWriter;
 import io.nexus.contracts.state.MachineStatus;
 import io.nexus.contracts.state.OrderStatus;
 import io.nexus.contracts.state.TransportStatus;
+import io.nexus.contracts.port.ProductCatalog.MaterialDemand;
 import io.nexus.flowpilot.FlowPilot;
+import io.nexus.flowpilot.store.StockLine;
 import io.nexus.flowpilot.store.TransportOrder;
 import io.nexus.smartfactory.SmartFactory;
 import io.nexus.smartfactory.master.SmartFactoryMasterData;
@@ -21,7 +23,9 @@ import io.nexus.smartfactory.store.MachineRecord;
 import io.nexus.smartfactory.store.Operation;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
@@ -75,6 +79,8 @@ final class Scenarios {
     Run run = switch (def.id()) {
       case "A" -> new MachineFailure();
       case "B" -> new AgvFailure();
+      case "C" -> new Shortage();
+      case "D" -> new Express();
       case "E" -> new FullRun();
       default -> throw DomainException.notFound("Szenario", scenarioId);
     };
@@ -281,6 +287,88 @@ final class Scenarios {
     String timeoutReason() {
       return agvId == null ? "Kein AGV fuhr beladen; läuft die Simulation mit Aufträgen?"
           : "Transport " + transportId + " fand kein Ersatz-AGV";
+    }
+  }
+
+  /** C: stock of the first material lowered to half of what a new order needs; passes when the order waits in SHORTAGE. */
+  final class Shortage extends Run {
+    private String material;
+
+    @Override
+    void begin(long now) {
+      String product = SmartFactoryMasterData.products().get(0).id();
+      int quantity = 10;
+      List<MaterialDemand> demand = sf.catalog().demandFor(product, quantity);
+      material = demand.get(0).materialId();
+      int need = 0;
+      for (MaterialDemand d : demand) if (d.materialId().equals(material)) need += d.quantity();
+      int keep = need / 2;
+      int available = 0;
+      for (StockLine l : fp.stock()) if (l.materialId().equals(material)) available += l.available();
+      int remove = Math.max(0, available - keep); // never more than is available: stock stays at or above zero
+      for (StockLine l : fp.stock()) {
+        if (remove == 0) break;
+        if (!l.materialId().equals(material) || l.available() <= 0) continue;
+        int take = Math.min(remove, l.available());
+        fp.issue(material, l.locationId(), take);
+        remove -= take;
+      }
+      String id = sf.createOrder(new NewOrder(product, quantity, Priority.NORMAL, 4 * 60 * MIN));
+      started(this, now, id, "Bestand von " + material + " auf " + Math.min(available, keep) + " gesenkt, Auftrag " + id
+          + " braucht " + need);
+    }
+
+    @Override
+    void check(long now) {
+      OrderStatus s = sf.order(orderId).status();
+      if (s == OrderStatus.SHORTAGE) {
+        finish(this, now, true, "Keine Reservierung, Auftrag wartet auf Wareneingang von " + material);
+      } else if (s == OrderStatus.RELEASED || s == OrderStatus.IN_PROGRESS || s == OrderStatus.COMPLETED) {
+        finish(this, now, false, "Auftrag wurde ohne Engpass freigegeben");
+      }
+    }
+
+    @Override
+    String timeoutReason() {
+      return "Auftrag " + orderId + " kam nicht in SHORTAGE";
+    }
+  }
+
+  /** D: an urgent order; passes once it is planned, listing the orders whose end moved later. */
+  final class Express extends Run {
+    private Map<String, Long> before;
+
+    @Override
+    void begin(long now) {
+      before = ends(sf.plan());
+      String product = SmartFactoryMasterData.products().get(0).id();
+      String id = sf.createOrder(new NewOrder(product, 2, Priority.EILIG, 60 * MIN));
+      started(this, now, id, "Eilauftrag " + id + " angelegt");
+    }
+
+    @Override
+    void check(long now) {
+      Map<String, Long> after = ends(sf.plan());
+      if (!after.containsKey(orderId)) return; // not planned yet
+      int shifted = 0;
+      for (var e : after.entrySet()) {
+        Long was = before.get(e.getKey());
+        if (was == null || e.getValue() <= was) continue;
+        shifted++;
+        note(this, now, e.getKey() + " endet " + ((e.getValue() - was + MIN - 1) / MIN) + " min später");
+      }
+      finish(this, now, true, shifted == 0 ? "Kein anderer Auftrag verschoben" : shifted + " Aufträge verschoben");
+    }
+
+    @Override
+    String timeoutReason() {
+      return "Eilauftrag " + orderId + " wurde nicht eingeplant";
+    }
+
+    private Map<String, Long> ends(Plan plan) {
+      Map<String, Long> m = new TreeMap<>(); // sorted by order id: the same notes in every runtime
+      for (Plan.PlannedOp op : plan.ops()) m.merge(op.orderId(), op.endMs(), Math::max);
+      return m;
     }
   }
 
