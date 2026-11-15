@@ -30,7 +30,7 @@ export const AREAS: Area[] = [
     summary: 'Die Halle in 3D, mit Details und Befehlen zu jeder Anlage.' },
   { id: 'smartfactory', label: 'SmartFactory', group: 'Systeme', hash: '#/smartfactory', comesWith: null,
     summary: 'Aufträge, Planung und Termine der Fertigung.' },
-  { id: 'flowpilot', label: 'FlowPilot', group: 'Systeme', hash: '#/flowpilot', comesWith: 'M2-C',
+  { id: 'flowpilot', label: 'FlowPilot', group: 'Systeme', hash: '#/flowpilot', comesWith: null,
     summary: 'Materialfluss, Transporte und die AGV-Flotte.' },
   { id: 'routemind', label: 'RouteMind', group: 'Systeme', hash: '#/routemind', comesWith: 'M4',
     summary: 'Auslieferung an Kunden: Touren, Fahrzeuge und Karte.' },
