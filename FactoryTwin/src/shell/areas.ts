@@ -28,7 +28,7 @@ export const AREAS: Area[] = [
     summary: 'Lage der ganzen Anlage auf einen Blick.' },
   { id: 'twin', label: 'FactoryTwin', group: 'Betrieb', hash: '#/twin', comesWith: null,
     summary: 'Die Halle in 3D, mit Details und Befehlen zu jeder Anlage.' },
-  { id: 'smartfactory', label: 'SmartFactory', group: 'Systeme', hash: '#/smartfactory', comesWith: 'M2-C',
+  { id: 'smartfactory', label: 'SmartFactory', group: 'Systeme', hash: '#/smartfactory', comesWith: null,
     summary: 'Aufträge, Planung und Termine der Fertigung.' },
   { id: 'flowpilot', label: 'FlowPilot', group: 'Systeme', hash: '#/flowpilot', comesWith: 'M2-C',
     summary: 'Materialfluss, Transporte und die AGV-Flotte.' },

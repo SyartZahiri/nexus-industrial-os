@@ -4,6 +4,7 @@ import { OverviewArea } from '../areas/overview/OverviewArea';
 import { SettingsArea } from '../areas/settings/SettingsArea';
 import { MachinesArea } from '../areas/machines/MachinesArea';
 import { WarehouseArea } from '../areas/warehouse/WarehouseArea';
+import { SmartFactoryArea } from '../areas/smartfactory/SmartFactoryArea';
 import { TwinArea } from '../areas/TwinArea';
 import { cx } from '../ui/primitives';
 import { areaById, type AreaId } from './areas';
@@ -25,6 +26,8 @@ function page(area: AreaId, param: string | null): ReactNode {
       return <MachinesArea id={param} />;
     case 'warehouse':
       return <WarehouseArea />;
+    case 'smartfactory':
+      return <SmartFactoryArea orderId={param} />;
     case 'twin':
       return <TwinArea />;
     default:
