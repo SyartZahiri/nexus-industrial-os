@@ -119,8 +119,11 @@ public class PlantSocket extends TextWebSocketHandler {
         hello = new JsonWriter().beginObject().name("type").value("hello").name("run").value(runKey(run.id()))
             .name("seed").value(run.seed()).endObject().toString();
       }
-      session.sendMessage(new TextMessage(hello));
-      clients.put(session.getId(), new ConcurrentWebSocketSessionDecorator(session, (int) SEND_TIMEOUT_MS, 1_048_576));
+      // through the decorator, so the greeting has the same 2 s send limit as every other message; still under this
+      // monitor (never under the platform lock), so it reaches the client before the sender thread's first frame
+      var client = new ConcurrentWebSocketSessionDecorator(session, (int) SEND_TIMEOUT_MS, 1_048_576);
+      client.sendMessage(new TextMessage(hello));
+      clients.put(session.getId(), client);
       sentFrame = null;          // the newcomer needs a frame and the simulation state now
       sentSim = null;
     }
