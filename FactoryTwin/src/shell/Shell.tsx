@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { OverviewArea } from '../areas/overview/OverviewArea';
 import { TwinArea } from '../areas/TwinArea';
 import { cx } from '../ui/primitives';
 import { areaById, type AreaId } from './areas';
@@ -10,6 +11,8 @@ import { SimBar } from './SimBar';
 /** The page of an area. Areas built in later tasks replace their line here. */
 function page(area: AreaId): ReactNode {
   switch (area) {
+    case 'overview':
+      return <OverviewArea />;
     case 'twin':
       return <TwinArea />;
     default:

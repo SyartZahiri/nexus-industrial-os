@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { NexusClient } from '../nexus/client';
-import type { Command, NexusEvent, SimState } from '../nexus/types';
+import type { Answer, Command, NexusEvent, Query, SimState } from '../nexus/types';
 import { toScene } from '../twin/sceneModel';
 import { Twin } from '../twin/twin';
 import type { SceneState } from '../twin/types';
@@ -138,6 +138,11 @@ export function startNexus(client: NexusClient): () => void {
 function client(): NexusClient {
   if (!current) throw new Error('NexusClient nicht verbunden');
   return current;
+}
+
+/** Asks the plant; throws when no client is connected yet. */
+export function query<T>(q: Query): Promise<Answer<T>> {
+  return client().query<T>(q);
 }
 
 /** Sends a command; if the plant refuses it, its reason becomes the notice and the result is false. */

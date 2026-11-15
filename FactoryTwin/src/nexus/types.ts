@@ -127,3 +127,25 @@ export type NexusMessage =
   | { type: 'frame'; frame: Frame }
   | { type: 'events'; items: NexusEvent[] }
   | { type: 'connection'; state: 'connecting' | 'open' | 'closed' };
+
+/** Key figures of a time window, as the core's "kpis" query answers. */
+export interface Kpis {
+  fromMs: number;
+  toMs: number;
+  throughputPerHour: number;
+  avgLeadTimeS: number;
+  p90LeadTimeS: number;
+  onTimeRate: number;
+  bottleneckMachineId: string | null;
+  machines: Record<
+    string,
+    {
+      utilization: number;
+      availability: number;
+      performance: number;
+      quality: number;
+      oee: number;
+      timeInStatusMs: Record<string, number>;
+    }
+  >;
+}
