@@ -5,7 +5,6 @@ import { hrefOf } from './route';
 /** Where the work of a coming area can already be seen today. */
 const MEANWHILE: Partial<Record<AreaId, { to: AreaId; text: string }>> = {
   routemind: { to: 'overview', text: 'Fertigware und Versand stehen in der Overview und im Lager von FactoryTwin.' },
-  analytics: { to: 'overview', text: 'Durchsatz, OEE, Termintreue und Durchlaufzeit zeigt die Overview.' },
   scenarios: { to: 'settings', text: 'Zufallsstörungen und Auftragsregeln lassen sich in Settings einstellen.' },
 };
 

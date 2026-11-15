@@ -38,7 +38,7 @@ export const AREAS: Area[] = [
     summary: 'Jede Maschine mit Zustand, Sensoren und Verlauf.' },
   { id: 'warehouse', label: 'Warehouse', group: 'Betrieb', hash: '#/warehouse', comesWith: null,
     summary: 'Bestände, Reservierungen und Wareneingang.' },
-  { id: 'analytics', label: 'Analytics', group: 'Auswertung', hash: '#/analytics', comesWith: 'M2-C',
+  { id: 'analytics', label: 'Analytics', group: 'Auswertung', hash: '#/analytics', comesWith: null,
     summary: 'Durchsatz, OEE, Durchlaufzeiten und Engpass aus den Ereignissen.' },
   { id: 'events', label: 'Event Monitor', group: 'Auswertung', hash: '#/events', comesWith: null,
     summary: 'Jedes Ereignis der Anlage, filterbar nach Auftrag, Quelle und Typ.' },
