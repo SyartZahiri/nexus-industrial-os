@@ -158,7 +158,7 @@ export function EventsArea({ filterId }: { filterId: string | null }) {
         </div>
       </form>
 
-      <div className="flex flex-wrap items-baseline justify-between gap-3 py-3 text-[12px] text-txt-3" aria-live="polite">
+      <div className="flex flex-wrap items-baseline justify-between gap-3 py-3 text-[12px] text-txt-3" aria-live={live ? 'off' : 'polite'}>
         <span>
           {live
             ? `Live: ${rows.length} der zuletzt empfangenen Ereignisse`

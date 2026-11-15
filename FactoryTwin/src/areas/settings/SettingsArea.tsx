@@ -61,19 +61,32 @@ function RulesPart() {
   const [current, setCurrent] = useState<Rules | null>(null);
   const [edited, setEdited] = useState<Rules | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
+  const [failed, setFailed] = useState(false);
+  const load = () => {
+    setFailed(false);
     void loadRules().then((r) => {
       setCurrent(r);
       setEdited(r);
+      setFailed(r === null);
     });
-  }, []);
+  };
+  useEffect(load, []);
 
   const aside =
-    'Regeln gelten sofort für den laufenden Betrieb. Lehnt die Anlage einen Wert ab, steht der Grund oben in der Meldungszeile, und das Formular zeigt wieder die gültigen Werte.';
+    'Regeln gelten nach „Übernehmen“ für den laufenden Betrieb. Lehnt die Anlage einen Wert ab, steht der Grund oben in der Meldungszeile, und das Formular zeigt wieder die gültigen Werte.';
   if (!current || !edited)
     return (
       <Part title="Regeln der Simulation" aside={aside}>
-        <p className="text-[13px] text-txt-3">Regeln werden geladen …</p>
+        {failed ? (
+          <p className="flex items-center gap-3 text-[13px] text-txt-2">
+            Die Regeln liessen sich nicht laden.
+            <Button size="sm" onClick={load}>
+              Erneut versuchen
+            </Button>
+          </p>
+        ) : (
+          <p className="text-[13px] text-txt-3">Regeln werden geladen …</p>
+        )}
       </Part>
     );
 

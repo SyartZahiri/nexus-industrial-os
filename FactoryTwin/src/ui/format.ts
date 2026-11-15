@@ -94,10 +94,10 @@ export const AGV_LABEL: Record<AgvState, string> = {
 export type EventSeverity = 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR';
 
 export const SEVERITY_COLOR: Record<EventSeverity, string> = {
-  INFO: '#64748b',
-  SUCCESS: '#22c55e',
-  WARNING: '#f59e0b',
-  ERROR: '#ef4444',
+  INFO: STATE_HEX.idle,
+  SUCCESS: STATE_HEX.run,
+  WARNING: STATE_HEX.wait,
+  ERROR: STATE_HEX.fault,
 };
 
 const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');

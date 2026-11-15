@@ -14,8 +14,8 @@ export function Button({
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: 'sm' | 'md' }) {
   const v: Record<Variant, string> = {
-    default: 'border-line-2 bg-ink-3 text-txt-1 hover:bg-ink-4 hover:border-[#3a4654]',
-    primary: 'border-teal-400/40 bg-teal-400/10 text-teal-200 hover:bg-teal-400/20',
+    default: 'border-line-2 bg-ink-3 text-txt-1 hover:bg-ink-4 hover:border-txt-3',
+    primary: 'border-transparent bg-txt-1 text-ink-1 hover:bg-white',
     danger: 'border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20',
     warn: 'border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20',
     ghost: 'border-transparent bg-transparent text-txt-2 hover:bg-white/5 hover:text-txt-1',
@@ -40,7 +40,7 @@ export function Button({
 export function SectionTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
     <div className="mb-2 flex items-center justify-between gap-2">
-      <h2 className="text-[10px] font-semibold uppercase tracking-[0.16em] text-txt-3">{children}</h2>
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-txt-3">{children}</h2>
       {right}
     </div>
   );
@@ -54,7 +54,7 @@ export function StatusDot({ color, pulse = false, size = 8 }: { color: string; p
   return (
     <span
       className={cx('inline-block shrink-0 rounded-full', pulse && 'pulse-dot')}
-      style={{ width: size, height: size, background: color, color, boxShadow: `0 0 8px ${color}66` }}
+      style={{ width: size, height: size, background: color, color }}
     />
   );
 }
@@ -62,7 +62,7 @@ export function StatusDot({ color, pulse = false, size = 8 }: { color: string; p
 export function Badge({ color, children }: { color: string; children: ReactNode }) {
   return (
     <span
-      className="inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-[1px] text-[10px] font-medium text-txt-1"
+      className="inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-[1px] text-[11px] font-medium text-txt-1"
       style={{ borderColor: `${color}55`, background: `${color}14` }}
     >
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
@@ -86,14 +86,14 @@ export function Toggle({ checked, onChange, label, hint }: { checked: boolean; o
         onClick={() => onChange(!checked)}
         className={cx(
           'relative mt-0.5 block h-[18px] w-8 shrink-0 rounded-full border p-0 transition-colors duration-150',
-          checked ? 'border-teal-400/50 bg-teal-400/30' : 'border-line-2 bg-ink-4',
+          checked ? 'border-txt-3 bg-ink-4' : 'border-line-2 bg-ink-2',
         )}
       >
         <span
           className={cx(
             'pointer-events-none absolute left-0 top-[2px] h-3 w-3 rounded-full transition-transform duration-200 ease-[var(--ease-out)]',
             // track is 32px incl. 1px border → 30px inside; knob 12px with 2px inset on both ends
-            checked ? 'translate-x-[16px] bg-teal-200' : 'translate-x-[2px] bg-txt-3',
+            checked ? 'translate-x-[16px] bg-txt-1' : 'translate-x-[2px] bg-txt-3',
           )}
         />
       </button>
@@ -115,7 +115,7 @@ export function Segmented<T extends string | number>({
   ariaLabel?: string;
 }) {
   return (
-    <div className="inline-flex rounded-md border border-line-2 bg-ink-1 p-0.5" role="group" aria-label={ariaLabel}>
+    <div className="inline-flex max-w-full flex-wrap rounded-md border border-line-2 bg-ink-1 p-0.5" role="group" aria-label={ariaLabel}>
       {options.map((o) => (
         <button
           key={String(o.value)}
@@ -126,8 +126,8 @@ export function Segmented<T extends string | number>({
           onClick={() => onChange(o.value)}
           className={cx(
             'whitespace-nowrap rounded-[4px] font-medium transition-[background-color,color] duration-150 active:scale-[0.97]',
-            size === 'sm' ? 'min-h-6 px-1.5 text-[10px]' : 'min-h-7 px-2 text-[11px]',
-            o.value === value ? 'bg-ink-4 text-txt-1 shadow-[inset_0_0_0_1px_#2f3a47]' : 'text-txt-3 hover:text-txt-1',
+            size === 'sm' ? 'min-h-6 px-1.5 text-[11px]' : 'min-h-7 px-2 text-[11px]',
+            o.value === value ? 'bg-ink-4 text-txt-1 shadow-[inset_0_0_0_1px_var(--color-line-2)]' : 'text-txt-3 hover:text-txt-1',
           )}
         >
           {o.label}
@@ -174,7 +174,7 @@ export function Slider({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        style={{ background: `linear-gradient(to right, #5eead4 ${((value - min) / (max - min)) * 100}%, #1e2630 0)` }}
+        style={{ background: `linear-gradient(to right, var(--color-txt-2) ${((value - min) / (max - min)) * 100}%, var(--color-line) 0)` /* hard stop: a filled track, not a blend */ }}
       />
     </div>
   );

@@ -18,6 +18,7 @@ describe('overviewFigures', () => {
     expect(f.onTime).toBe('–');
     expect(f.leadTime).toBe('–');
     expect(f.oee).not.toContain('NaN');
+    expect(f.bottleneck).toBeNull();
   });
 
   it('counts open, late and moving work from the frame', () => {

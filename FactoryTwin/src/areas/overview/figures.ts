@@ -34,7 +34,7 @@ export function overviewFigures(frame: Frame | null, kpis: Kpis | null, events: 
     lateOrders: frame ? open.filter((o) => o.dueAtMs < frame.simTimeMs).length : 0,
     activeTransports: frame ? frame.transports.length : 0,
     machines: frame ? frame.machines.map((m) => ({ id: m.id, status: m.status })) : [],
-    bottleneck: kpis?.bottleneckMachineId ?? null,
+    bottleneck: finishedInWindow ? (kpis?.bottleneckMachineId ?? null) : null, // no flow, no bottleneck
     alerts: events.filter((e) => e.severity === 'ERROR' || e.severity === 'WARNING').slice(-8).reverse(),
   };
 }

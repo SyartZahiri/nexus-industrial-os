@@ -15,6 +15,7 @@ function useShortcuts() {
       const st = useFactory.getState();
       const k = e.key.toLowerCase();
       if (e.key === ' ') {
+        if (t?.closest('button, a, summary, [role="switch"], [role="button"], [role="tab"], [tabindex]')) return;
         e.preventDefault();
         void (st.sim.running ? control.pause() : control.play());
         return;

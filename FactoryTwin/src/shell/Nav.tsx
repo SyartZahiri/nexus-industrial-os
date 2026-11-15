@@ -52,7 +52,7 @@ export function Nav({ current, onNavigate }: { current: AreaId; onNavigate?: () 
                       )}
                     >
                       <span>{a.label}</span>
-                      {a.comesWith && <span className="text-[10px] text-txt-3">{a.comesWith}</span>}
+                      {a.comesWith && <span className="text-[11px] text-txt-3">{a.comesWith}</span>}
                     </a>
                   </li>
                 );
