@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const windows = process.platform === 'win32';
-const result = spawnSync(windows ? 'mvnw.cmd' : './mvnw',
+// cmd does not find mvnw.cmd by its bare name here; the quoted absolute path works (as in run-server.mjs)
+const result = spawnSync(windows ? `"${root}mvnw.cmd"` : './mvnw',
   ['-B', '-q', '-pl', 'platform/web', '-am', 'package', '-DskipTests'],
   { cwd: root, stdio: 'inherit', shell: windows });
 process.exit(result.status ?? 1);

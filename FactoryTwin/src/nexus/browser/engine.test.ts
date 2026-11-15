@@ -67,4 +67,14 @@ describe('BrowserEngine', () => {
     expect(rules.dispatchRule).toBe('EDD'); // like the server: a restart keeps the rules
     expect(rules.maxOpenOrders).toBe(9);
   });
+
+  it('answers the new queries from the TeaVM core', () => {
+    const engine = new BrowserEngine(core, 7);
+    const ask = (body: object) => engine.handle({ id: 1, kind: 'query', body: body as never }).answer as { ok: boolean };
+    expect(ask({ query: 'products' }).ok).toBe(true);
+    expect(ask({ query: 'schedule' }).ok).toBe(true);
+    expect(ask({ query: 'warehouse' }).ok).toBe(true);
+    expect(ask({ query: 'network' }).ok).toBe(true);
+    expect(ask({ query: 'kpiSeries', bucketMinutes: 10, buckets: 6 }).ok).toBe(true);
+  });
 });
