@@ -35,6 +35,7 @@ class PlantSocketTest {
   @Autowired io.nexus.contracts.event.EventBus bus;
   @Autowired io.nexus.contracts.event.UnitOfWork work;
   @Autowired org.springframework.transaction.support.TransactionTemplate tx;
+  @Autowired SimulationLoop loop;
 
   @BeforeEach
   void freshPlant() {
@@ -119,6 +120,30 @@ class PlantSocketTest {
   }
 
   @Test
+  void theSimulationStateIsSentOnConnectAndOnChange() throws Exception {
+    var client = new Client().connect(null);
+    assertThat(client.next("sim")).containsEntry("running", false).containsEntry("seed", 5L);
+    loop.setSpeed(5);
+    assertThat(((Number) client.next("sim").get("speed")).doubleValue()).isEqualTo(5.0);   // JsonWriter writes 5.0 as 5
+    loop.setSpeed(1);
+    client.session.close();
+  }
+
+  /** Final review: a client that reconnects must learn whether the run is still the one it knew. */
+  @Test
+  void aNewClientIsGreetedWithItsRunAndAResetNamesTheNewOne() throws Exception {
+    var client = new Client().connect(null);
+    var hello = client.messages.poll(10, TimeUnit.SECONDS);
+    assertThat(hello).containsEntry("type", "hello").containsEntry("seed", 5L);
+    String run = (String) hello.get("run");
+    assertThat(run).isNotBlank();
+    reset.reset(99);
+    var announced = client.next("reset");
+    assertThat(announced.get("run")).isNotEqualTo(run);
+    client.session.close();
+  }
+
+  @Test
   void resetIsAnnounced() throws Exception {
     var client = new Client().connect(null);
     client.next("frame");
@@ -173,12 +198,15 @@ class PlantSocketTest {
   @Test
   void clientsBeyondTheLimitAreTurnedAway() throws Exception {
     List<Client> admitted = new ArrayList<>();
-    for (int i = 0; i < PlantSocket.MAX_CLIENTS; i++) admitted.add(new Client().connect(null));
-    var extra = new Client().connect(null);
-    long deadline = System.currentTimeMillis() + 5_000;
-    while (extra.session.isOpen() && System.currentTimeMillis() < deadline) Thread.sleep(50);
-    assertThat(extra.session.isOpen()).as("the client over the limit is closed").isFalse();
-    for (Client c : admitted) c.session.close();
+    try {
+      for (int i = 0; i < PlantSocket.MAX_CLIENTS; i++) admitted.add(new Client().connect(null));
+      var extra = new Client().connect(null);
+      long deadline = System.currentTimeMillis() + 5_000;
+      while (extra.session.isOpen() && System.currentTimeMillis() < deadline) Thread.sleep(50);
+      assertThat(extra.session.isOpen()).as("the client over the limit is closed").isFalse();
+    } finally {
+      for (Client c : admitted) c.session.close();      // never leave 50 clients behind for the next test
+    }
   }
 
   @Test

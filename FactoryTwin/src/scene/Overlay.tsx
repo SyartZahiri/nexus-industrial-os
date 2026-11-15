@@ -2,7 +2,7 @@ import { CameraControls, Html } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { engine, useFactory, type CameraPreset, type Selection } from '../store/factoryStore';
+import { plant, sceneOf, useFactory, type CameraPreset, type Selection } from '../store/factoryStore';
 import { labelPortal } from './labelPortal';
 import { AGV_COLOR, AGV_LABEL, CONVEYOR_COLOR, CONVEYOR_LABEL, STATUS_COLOR, STATUS_SHORT } from '../ui/format';
 
@@ -12,19 +12,19 @@ import { AGV_COLOR, AGV_LABEL, CONVEYOR_COLOR, CONVEYOR_LABEL, STATUS_COLOR, STA
 
 export function footprint(sel: Selection): { x: number; z: number; w: number; d: number; yaw: number; h: number } | null {
   if (sel.type === 'machine') {
-    const m = engine.machine(sel.id);
+    const m = plant.machine(sel.id);
     if (!m) return null;
     if (m.kind === 'cnc') return { x: m.position.x - 0.15, z: m.position.z + 1.1, w: 5.0, d: 5.4, yaw: 0, h: 3.2 };
     if (m.kind === 'robot') return { x: m.position.x + 0.05, z: m.position.z + 0.2, w: 5.2, d: 4.2, yaw: 0, h: 2.6 };
     return { x: m.position.x, z: m.position.z + 0.6, w: 4.2, d: 3.6, yaw: 0, h: 3 };
   }
   if (sel.type === 'conveyor') {
-    const c = engine.conveyor(sel.id);
+    const c = plant.conveyor(sel.id);
     if (!c) return null;
     return { x: (c.start.x + c.end.x) / 2, z: (c.start.z + c.end.z) / 2, w: 1.1, d: c.length + 0.5, yaw: Math.atan2(c.end.x - c.start.x, c.end.z - c.start.z), h: 1.3 };
   }
   if (sel.type === 'agv') {
-    const a = engine.agv(sel.id);
+    const a = plant.agv(sel.id);
     if (!a) return null;
     return { x: a.pos.x, z: a.pos.z, w: 1.3, d: 1.8, yaw: a.heading, h: 1 };
   }
@@ -77,9 +77,9 @@ export function SelectionOverlay() {
     if (!hovered || hovered === selected?.id) return null;
     if (hovered === 'RAW') return { type: 'raw', id: 'RAW' };
     if (hovered === 'FG') return { type: 'finished', id: 'FG' };
-    if (engine.machine(hovered)) return { type: 'machine', id: hovered };
-    if (engine.conveyor(hovered)) return { type: 'conveyor', id: hovered };
-    if (engine.agv(hovered)) return { type: 'agv', id: hovered };
+    if (plant.machine(hovered)) return { type: 'machine', id: hovered };
+    if (plant.conveyor(hovered)) return { type: 'conveyor', id: hovered };
+    if (plant.agv(hovered)) return { type: 'agv', id: hovered };
     return null;
   }, [hovered, selected]);
   return (
@@ -135,8 +135,8 @@ function Tag({
  */
 export function Labels() {
   const show = useFactory((s) => s.showLabels);
-  const machines = useFactory((s) => s.snap.machines);
-  const conveyors = useFactory((s) => s.snap.conveyors);
+  const machines = useFactory((s) => sceneOf(s).machines);
+  const conveyors = useFactory((s) => sceneOf(s).conveyors);
   const selected = useFactory((s) => s.selected);
   const hovered = useFactory((s) => s.hovered);
   const focus = (id: string) => selected?.id === id || hovered === id;
@@ -177,7 +177,7 @@ export function Labels() {
 }
 
 function ZoneTag({ title, kind, visible }: { title: string; kind: 'raw' | 'finished'; visible: boolean }) {
-  const inv = useFactory((s) => s.snap.inventory);
+  const inv = useFactory((s) => sceneOf(s).inventory);
   const n = kind === 'raw' ? inv.raw : Object.values(inv.finished).reduce((a, b) => a + b, 0);
   const cap = kind === 'raw' ? inv.rawCapacity : inv.finishedCapacity;
   return (
@@ -194,7 +194,7 @@ function ZoneTag({ title, kind, visible }: { title: string; kind: 'raw' | 'finis
 }
 
 function AgvLabels({ show, focusId }: { show: boolean; focusId: string | null }) {
-  const agvs = useFactory((s) => s.snap.agvs);
+  const agvs = useFactory((s) => sceneOf(s).agvs);
   return (
     <>
       {agvs.map((a) => (
@@ -214,7 +214,7 @@ function AgvLabels({ show, focusId }: { show: boolean; focusId: string | null })
 function AgvLabel({ id, state, color, battery, visible }: { id: string; state: string; color: string; battery: number; visible: boolean }) {
   const g = useRef<THREE.Group>(null);
   useFrame(() => {
-    const a = engine.state.agvs.find((x) => x.id === id);
+    const a = plant.state.agvs.find((x) => x.id === id);
     if (a && g.current) g.current.position.set(a.pos.x, 1.4, a.pos.z);
   });
   return (

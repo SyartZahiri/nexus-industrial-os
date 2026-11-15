@@ -1,156 +1,19 @@
 import { create } from 'zustand';
-import { createFactoryApi } from '../integration/api';
-import { RouteMindConnector, SmartFactoryConnector } from '../integration/adapters';
-import type { ConnectorStatus, FactoryConnector, FactoryTwinApi } from '../integration/contracts';
-import { isMachineAvailable, machineOee, SimulationEngine } from '../sim/engine';
-import type {
-  Agv,
-  Alarm,
-  Conveyor,
-  HistorySeries,
-  Inventory,
-  Machine,
-  Order,
-  Rules,
-  SimEvent,
-} from '../sim/types';
+import type { NexusClient } from '../nexus/client';
+import type { Command, NexusEvent, SimState } from '../nexus/types';
+import { toScene } from '../twin/sceneModel';
+import { Twin } from '../twin/twin';
+import type { SceneState } from '../twin/types';
 
-/* ------------------------------------------------------------------ */
-/* Engine singleton: all views read from this one simulation.         */
-/* ------------------------------------------------------------------ */
+/**
+ * The user interface's state. The plant itself lives in the Java core (worker or server); this store only holds
+ * what arrived from it through the NexusClient, plus selection, camera and panel settings.
+ */
 
-const urlSeed = Number(new URLSearchParams(window.location.search).get('seed'));
-export const engine = new SimulationEngine(Number.isFinite(urlSeed) && urlSeed > 0 ? urlSeed : 4711);
-export const api: FactoryTwinApi = createFactoryApi(() => engine);
+/** Latest and previous frame; the 3D scene reads interpolated poses from it in useFrame. */
+export const twin = new Twin();
 
-declare global {
-  interface Window {
-    FactoryTwin?: FactoryTwinApi & { engine: SimulationEngine };
-  }
-}
-window.FactoryTwin = Object.assign(api, { engine });
-
-/* ------------------------------------------------------------------ */
-/* Snapshot: immutable view of the engine state for React panels       */
-/* ------------------------------------------------------------------ */
-
-export interface Kpis {
-  throughput: number;
-  oee: number;
-  availability: number;
-  performance: number;
-  quality: number;
-  utilization: number;
-  powerKW: number;
-  energyKWh: number;
-  energyPerPart: number;
-  wip: number;
-  scrapRate: number;
-  totalGood: number;
-  totalScrap: number;
-  avgLeadTime: number;
-  onTimeRate: number;
-  openOrders: number;
-  activeTransports: number;
-  agvUtilization: number;
-}
-
-export interface Snapshot {
-  time: number;
-  running: boolean;
-  speed: number;
-  seed: number;
-  machines: Machine[];
-  conveyors: Conveyor[];
-  agvs: Agv[];
-  orders: Order[];
-  alarms: Alarm[];
-  events: SimEvent[];
-  inventory: Inventory;
-  rules: Rules;
-  history: HistorySeries;
-  kpi: Kpis;
-  rawQueue: number;
-  plannerLabel: string;
-  /** Per-machine OEE breakdown. */
-  oee: Record<string, { a: number; p: number; q: number; oee: number }>;
-  /** Workpiece lookup for the selected detail panels (id → short info). */
-  wpInfo: Record<string, { product: string; orderId: string; step: number }>;
-}
-
-function buildSnapshot(prev: Snapshot | null): Snapshot {
-  const s = engine.state;
-  const ms = s.machines;
-  const oee: Snapshot['oee'] = {};
-  let a = 0;
-  let p = 0;
-  let q = 0;
-  for (const m of ms) {
-    const o = machineOee(m);
-    oee[m.id] = o;
-    a += o.a;
-    p += o.p;
-    q += o.q;
-  }
-  const n = ms.length;
-  const completedOrders = s.orders.filter((o) => o.status === 'ABGESCHLOSSEN' && o.completedAt !== null);
-  const onTime = completedOrders.filter((o) => (o.completedAt ?? 0) <= o.dueAt).length;
-  const leads = s.metrics.leadTimes;
-  const wip = [...s.workpieces.values()].filter((w) => w.location.type !== 'finished' && w.location.type !== 'scrap').length;
-  const wpInfo: Snapshot['wpInfo'] = {};
-  for (const w of s.workpieces.values()) {
-    if (w.location.type === 'finished' || w.location.type === 'scrap') continue;
-    wpInfo[w.id] = { product: w.product, orderId: w.orderId, step: w.step };
-  }
-  const kpi: Kpis = {
-    throughput: engine.throughput(),
-    oee: (a / n) * (p / n) * (q / n),
-    availability: a / n,
-    performance: p / n,
-    quality: q / n,
-    utilization: ms.reduce((acc, m) => acc + m.stats.utilEma, 0) / n,
-    powerKW: s.metrics.powerKW,
-    energyKWh: s.metrics.energyKWh,
-    energyPerPart: s.metrics.totalGood > 0 ? s.metrics.energyKWh / s.metrics.totalGood : 0,
-    wip,
-    scrapRate: s.metrics.totalScrap / Math.max(1, s.metrics.totalScrap + s.metrics.totalGood),
-    totalGood: s.metrics.totalGood,
-    totalScrap: s.metrics.totalScrap,
-    avgLeadTime: leads.length ? leads.reduce((x, y) => x + y, 0) / leads.length : 0,
-    onTimeRate: completedOrders.length ? onTime / completedOrders.length : 1,
-    openOrders: s.orders.filter((o) => o.status !== 'ABGESCHLOSSEN' && o.status !== 'STORNIERT').length,
-    activeTransports: s.tasks.length,
-    agvUtilization: s.agvs.reduce((acc, v) => acc + v.stats.busyEma, 0) / s.agvs.length,
-  };
-  const lastEvent = s.events[s.events.length - 1]?.id ?? 0;
-  const prevLast = prev?.events[prev.events.length - 1]?.id ?? -1;
-  const histLen = s.history.t.length;
-  const historyChanged = !prev || prev.history.t.length !== histLen || prev.history.t[histLen - 1] !== s.history.t[histLen - 1];
-  return {
-    time: s.time,
-    running: s.running,
-    speed: s.speed,
-    seed: s.seed,
-    machines: structuredClone(ms),
-    conveyors: structuredClone(s.conveyors),
-    agvs: structuredClone(s.agvs),
-    orders: structuredClone(s.orders),
-    alarms: structuredClone(s.alarms),
-    events: prev && prevLast === lastEvent && prev.events.length === s.events.length ? prev.events : s.events.slice(),
-    inventory: structuredClone(s.inventory),
-    rules: { ...s.rules },
-    history: historyChanged || !prev ? structuredClone(s.history) : prev.history,
-    kpi,
-    rawQueue: s.rawQueue.length,
-    plannerLabel: engine.planner.label,
-    oee,
-    wpInfo,
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/* UI store                                                            */
-/* ------------------------------------------------------------------ */
+const MAX_EVENTS = 500;
 
 export type SelectionType = 'machine' | 'conveyor' | 'agv' | 'raw' | 'finished';
 export interface Selection {
@@ -159,85 +22,61 @@ export interface Selection {
 }
 
 export type Quality = 'high' | 'balanced' | 'performance';
-export type RightTab = 'details' | 'orders' | 'rules' | 'integration';
+export type RightTab = 'details' | 'events';
 export type CameraPreset = 'overview' | 'machining' | 'assembly' | 'logistics' | 'top' | 'focus';
-
-export interface ConnectorView {
-  id: string;
-  label: string;
-  description: string;
-  status: ConnectorStatus;
-  detail: string;
-}
+export type Connection = 'connecting' | 'open' | 'closed';
 
 interface FactoryStore {
-  snap: Snapshot;
+  scene: SceneState | null;
+  sim: SimState;
+  mode: 'browser' | 'server';
+  connection: Connection;
+  events: NexusEvent[];
+  /** The last reason the plant gave for refusing a command; shown until dismissed. */
+  notice: string | null;
   selected: Selection | null;
   hovered: string | null;
   rightTab: RightTab;
   quality: Quality;
   showLabels: boolean;
   showPaths: boolean;
-  logOpen: boolean;
-  logTab: 'events' | 'alarms';
   leftOpen: boolean;
   rightOpen: boolean;
   camera: { preset: CameraPreset; nonce: number };
-  connectors: ConnectorView[];
   select(sel: Selection | null, focus?: boolean): void;
   hover(id: string | null): void;
   setRightTab(tab: RightTab): void;
   setQuality(q: Quality): void;
-  toggle(key: 'showLabels' | 'showPaths' | 'logOpen' | 'leftOpen' | 'rightOpen'): void;
-  setPanel(key: 'leftOpen' | 'rightOpen' | 'logOpen', open: boolean): void;
+  toggle(key: 'showLabels' | 'showPaths' | 'leftOpen' | 'rightOpen'): void;
+  setPanel(key: 'leftOpen' | 'rightOpen', open: boolean): void;
   setCamera(preset: CameraPreset): void;
-  showLog(tab: 'events' | 'alarms'): void;
-  toggleConnector(id: string): Promise<void>;
-  refresh(): void;
+  dismissNotice(): void;
 }
 
-const isMobile = window.matchMedia('(max-width: 1023px)').matches;
-const lowEnd = isMobile || (navigator.hardwareConcurrency ?? 8) <= 4;
-
-export const smartFactory = new SmartFactoryConnector();
-export const routeMind = new RouteMindConnector();
-const connectorList: FactoryConnector[] = [smartFactory, routeMind];
-
-function connectorViews(): ConnectorView[] {
-  return connectorList.map((c) => ({
-    id: c.id,
-    label: c.label,
-    description: c.description,
-    status: c.status,
-    detail:
-      c === smartFactory
-        ? c.status === 'connected'
-          ? `${smartFactory.stats.telemetryFrames} Telemetrie-Frames, ${smartFactory.stats.eventsReceived} Ereignisse, ${smartFactory.stats.ordersPushed} Aufträge eingesteuert`
-          : 'Nicht verbunden. Aufträge kommen aus dem lokalen Generator.'
-        : c.status === 'connected'
-          ? `Aktiver Planer: ${routeMind.planner?.label ?? '–'}, ${routeMind.planner?.plannedRoutes ?? 0} Routen berechnet`
-          : 'Nicht verbunden. Der lokale Dijkstra-Planer fährt die AGVs.',
-  }));
-}
+const hasWindow = typeof window !== 'undefined';
+const isMobile = hasWindow && window.matchMedia('(max-width: 1023px)').matches;
+const lowEnd = isMobile || (hasWindow && (navigator.hardwareConcurrency ?? 8) <= 4);
 
 export const useFactory = create<FactoryStore>((set, get) => ({
-  snap: buildSnapshot(null),
+  scene: null,
+  sim: { running: false, speed: 1, seed: 0 },
+  mode: 'browser',
+  connection: 'connecting',
+  events: [],
+  notice: null,
   selected: null,
   hovered: null,
-  rightTab: 'orders',
+  rightTab: 'events',
   quality: lowEnd ? 'performance' : 'high',
   showLabels: !isMobile,
   showPaths: true,
-  logOpen: !isMobile,
-  logTab: 'events',
   leftOpen: !isMobile,
   rightOpen: !isMobile,
   camera: { preset: 'overview', nonce: 0 },
-  connectors: connectorViews(),
   select(sel, focus = false) {
     set((st) => ({
       selected: sel,
-      rightTab: sel ? 'details' : st.rightTab === 'details' ? 'orders' : st.rightTab,
+      rightTab: sel ? 'details' : st.rightTab === 'details' ? 'events' : st.rightTab,
       rightOpen: sel ? true : st.rightOpen,
       camera: focus && sel ? { preset: 'focus', nonce: st.camera.nonce + 1 } : st.camera,
     }));
@@ -260,63 +99,109 @@ export const useFactory = create<FactoryStore>((set, get) => ({
   setCamera(preset) {
     set((st) => ({ camera: { preset, nonce: st.camera.nonce + 1 } }));
   },
-  showLog(tab) {
-    set({ logOpen: true, logTab: tab });
-  },
-  async toggleConnector(id) {
-    const c = connectorList.find((x) => x.id === id);
-    if (!c || c.status === 'connecting') return;
-    const refreshViews = () => set({ connectors: connectorViews() });
-    if (c.status === 'connected') {
-      await c.disconnect();
-      engine.note('info', 'Integration', c.label + ' getrennt');
-    } else {
-      const p = c.connect(api);
-      refreshViews();
-      await p;
-      engine.note('success', 'Integration', c.label + ' verbunden');
-    }
-    refreshViews();
-    get().refresh();
-  },
-  refresh() {
-    set({ snap: buildSnapshot(get().snap), connectors: connectorViews() });
+  dismissNotice() {
+    set({ notice: null });
   },
 }));
 
-/* ------------------------------------------------------------------ */
-/* Simulation driver                                                    */
-/* ------------------------------------------------------------------ */
+let current: NexusClient | null = null;
+let stop: (() => void) | null = null;
 
-let loopStarted = false;
-const PUBLISH_INTERVAL = 150; // ms
-
-export function startSimulationLoop() {
-  if (loopStarted) return;
-  loopStarted = true;
-  let last = performance.now();
-  let lastPublish = 0;
-  let lastRevision = -1;
-  const frame = (now: number) => {
-    const dt = (now - last) / 1000;
-    last = now;
-    engine.advance(dt);
-    const due = now - lastPublish > PUBLISH_INTERVAL;
-    if (due && (engine.state.running || engine.revision !== lastRevision)) {
-      lastPublish = now;
-      lastRevision = engine.revision;
-      useFactory.getState().refresh();
+/** Connects the store to the plant; every message updates the twin first, then the store. */
+export function startNexus(client: NexusClient): () => void {
+  stop?.();
+  current = client;
+  useFactory.setState({ mode: client.mode });
+  stop = client.connect((m) => {
+    twin.apply(m, performance.now());
+    switch (m.type) {
+      case 'reset':
+        useFactory.setState({ events: [], scene: null });
+        break;
+      case 'sim':
+        useFactory.setState({ sim: { running: m.running, speed: m.speed, seed: m.seed } });
+        break;
+      case 'frame':
+        useFactory.setState({ scene: twin.scene });
+        break;
+      case 'events':
+        useFactory.setState((s) => ({ events: [...s.events, ...m.items].slice(-MAX_EVENTS) }));
+        break;
+      case 'connection':
+        useFactory.setState({ connection: m.state });
+        break;
     }
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
+  });
+  return stop;
 }
 
-/** Run a command against the engine and publish the resulting state immediately. */
-export function command<T>(fn: (e: SimulationEngine) => T): T {
-  const r = fn(engine);
-  useFactory.getState().refresh();
-  return r;
+function client(): NexusClient {
+  if (!current) throw new Error('NexusClient nicht verbunden');
+  return current;
 }
 
-export { isMachineAvailable };
+/** Sends a command; if the plant refuses it, its reason becomes the notice and the result is false. */
+export async function send(c: Command): Promise<boolean> {
+  const answer = await client().command(c);
+  if (!answer.ok) {
+    useFactory.setState({ notice: answer.message });
+    return false;
+  }
+  // the frame does not carry override and coolant: remember what the plant accepted
+  if (c.command === 'machineConfigure' && typeof c.machineId === 'string') {
+    twin.setConfig(c.machineId, { override: Number(c.override), coolant: Boolean(c.coolant) });
+    useFactory.setState({ scene: twin.scene });
+  }
+  useFactory.setState({ notice: null });
+  return true;
+}
+
+async function guarded(action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (e) {
+    useFactory.setState({ notice: e instanceof Error ? e.message : 'Aktion fehlgeschlagen' });
+  }
+}
+
+/** Play, pause, speed and reset of the simulation, in either runtime. */
+export const control = {
+  play: () => guarded(() => client().play()),
+  pause: () => guarded(() => client().pause()),
+  setSpeed: (speed: number) => guarded(() => client().setSpeed(speed)),
+  reset: (seed?: number) => guarded(() => client().reset(seed)),
+};
+
+const EMPTY_SCENE: SceneState = toScene({
+  simTimeMs: 0,
+  machines: [],
+  conveyors: [],
+  agvs: [],
+  stock: [],
+  orders: [],
+  transports: [],
+});
+
+/**
+ * Read access for the 3D scene, shaped like the former engine: the latest scene state plus running and speed.
+ * Before the first frame the hall stands with its machines in state UNKNOWN and no AGVs.
+ */
+export const plant = {
+  /** AGV poses are interpolated between the two latest frames (twin.agvPose), so motion stays smooth. */
+  get state(): SceneState & { running: boolean; speed: number } {
+    const { running, speed } = useFactory.getState().sim;
+    const scene = twin.scene ?? EMPTY_SCENE;
+    const now = performance.now();
+    const agvs = scene.agvs.map((a) => {
+      const p = twin.agvPose(a.id, now);
+      return p ? { ...a, pos: { x: p.x, z: p.z }, heading: p.heading } : a;
+    });
+    return { ...scene, agvs, running, speed };
+  },
+  machine: (id: string) => plant.state.machines.find((m) => m.id === id),
+  conveyor: (id: string) => plant.state.conveyors.find((c) => c.id === id),
+  agv: (id: string) => plant.state.agvs.find((a) => a.id === id),
+};
+
+/** For selectors: the scene state, or the empty hall before the first frame (a stable object, safe for React). */
+export const sceneOf = (s: { scene: SceneState | null }): SceneState => s.scene ?? EMPTY_SCENE;

@@ -1,4 +1,4 @@
-import type { FaultType, MachineConfig, ProcessType, ProductDef, ProductId, Rules } from './types';
+import type { FaultType, MachineConfig, ProcessType, ProductDef, ProductId } from './types';
 
 export const PRODUCTS: Record<ProductId, ProductDef> = {
   GH200: {
@@ -67,18 +67,6 @@ export const FAULT_TYPES: FaultType[] = [
   { id: 'BELT', label: 'Bandantrieb blockiert', repairTime: 180, scrapsWorkpiece: false, kinds: ['conveyor'] },
   { id: 'NAV', label: 'Navigationsfehler (Lidar)', repairTime: 60, scrapsWorkpiece: false, kinds: ['agv'] },
 ];
-
-export const DEFAULT_RULES: Rules = {
-  dynamicRouting: true,
-  dispatchRule: 'PRIORITY',
-  randomFaults: true,
-  autoMaintenance: true,
-  maintenanceThreshold: 0.85,
-  autoRepair: true,
-  wipLimit: 20,
-  autoOrders: true,
-  autoReplenish: true,
-};
 
 export const DEFAULT_MACHINE_CONFIG: MachineConfig = {
   override: 100,

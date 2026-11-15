@@ -34,4 +34,15 @@ class WebRuntimeTest {
     // smoke.mjs compares the JavaScript build against exactly this text
     Files.writeString(Path.of("target", "selftest-jvm.txt"), out);
   }
+
+  @Test
+  void eventsFromAPositionCarryTheirSeq() {
+    WebRuntime.plantStart(3);
+    WebRuntime.plantAdvance(10 * 60_000);
+    String all = WebRuntime.plantEventsFrom(0);
+    String later = WebRuntime.plantEventsFrom(2);
+    assertThat(all).startsWith("[{\"seq\":1,");
+    assertThat(later).startsWith("[{\"seq\":3,");
+    assertThat(WebRuntime.plantQuery("{\"query\":\"rules\"}")).contains("\"ok\":true");
+  }
 }

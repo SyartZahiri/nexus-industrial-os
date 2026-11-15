@@ -1,15 +1,25 @@
 # FactoryTwin
 
-FactoryTwin ist ein 3D-Digital-Twin einer kleinen Fertigung mit Zerspanung, Montage, Qualitätsprüfung und Intralogistik. Alles, was in der 3D-Ansicht passiert und im Dashboard steht, kommt aus derselben Simulation.
+FactoryTwin ist die Oberfläche von NEXUS Industrial OS: ein 3D-Digital-Twin einer kleinen Fertigung mit Zerspanung, Montage, Qualitätsprüfung und Intralogistik. Die Anlage selbst rechnet der Java-Kern (FlowPilot, SmartFactory, Simulation); diese Oberfläche zeigt und steuert ihn, im Browser oder gegen den Server.
 
 Gebaut mit React 19, TypeScript, Vite, Three.js, React Three Fiber (mit drei), Tailwind CSS 4 und Zustand. Getestet wird mit Vitest.
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
-npm test           # Tests der Simulations-Engine
+npm run core       # Java-Kern für den Browser bauen (TeaVM, einmal und nach Änderungen am Kern)
+npm run dev        # http://localhost:5173, Betriebsart Browser
+npm test           # Tests von Datenweg, Twin und Store
 npm run build      # statischer Build in dist/
 ```
+
+## Betriebsarten
+
+| | Start | Was läuft |
+|---|---|---|
+| Browser (Standard) | `npm run dev` | Der Java-Kern, mit TeaVM nach JavaScript übersetzt, in einem Web Worker. Kein Server nötig; nach dem Neuladen beginnt die Anlage von vorn. |
+| Server | `node scripts/run-server.mjs`, dann `npm run dev -- --mode server --port 5179` | Spring Boot mit PostgreSQL (eingebettet) und OPC UA. Vite leitet `/api` und `/ws` an `localhost:8080` weiter. |
+
+Mit `?seed=123` in der URL startet die Browser-Anlage mit einem anderen Seed. Die Kopfleiste zeigt die aktive Betriebsart und den Verbindungsstand.
 
 ## Was simuliert wird
 
@@ -40,41 +50,21 @@ Die Grafikqualität lässt sich oben rechts umstellen: Hoch mit Schatten und Blo
 
 ```
 src/
-  sim/            Domänenmodell und Engine, ohne Framework, headless testbar
-    types.ts        Datentypen
-    config.ts       Produkte, Arbeitspläne, Störungsarten, Physik-Parameter
-    layout.ts       Hallenlayout und gerichteter AGV-Graph
-    engine.ts       SimulationEngine: step(dt), Disposition, Umplanung, Befehle
-    invariants.ts   Konsistenzprüfung des Zustands (für Tests und Fehlersuche)
-    *.test.ts       Durchsatz, Umplanung, Blockaden, Determinismus, Chaos-Tests
-  integration/    Öffentliche Schnittstellen
-    contracts.ts    FactoryCommands, DomainEvent, TelemetryFrame, RoutePlanner, FactoryConnector
-    api.ts          Fassade, im Browser auch als window.FactoryTwin erreichbar
-    adapters.ts     Demo-Adapter für SmartFactory und RouteMind
-  store/          Zustand-Store: Engine-Instanz, Snapshots für die Panels, UI-Zustand
-  scene/          3D-Szene; liest den Engine-Zustand pro Frame ohne React-Re-Render
-  ui/             Dashboard, Panels und Charts (SVG, ohne Chart-Bibliothek)
+  nexus/          Verbindung zur Anlage: NexusClient mit zwei Umsetzungen
+    types.ts        Frame, Ereignisse, Befehle und Antworten (dasselbe JSON in beiden Betriebsarten)
+    loop.ts         Takt der Browser-Anlage, wie SimulationLoop auf dem Server
+    browser/        Web Worker mit dem Java-Kern (BrowserEngine, BrowserClient)
+    server/         REST und WebSocket, mit Wiederverbinden und Nachholen verpasster Ereignisse
+  twin/           Twin-Laufzeit (letzter und vorletzter Frame, Interpolation) und Szenenmodell
+    sceneModel.ts   bildet den Frame auf die Formen ab, die die 3D-Szene liest
+    plantLayout.ts  Zeichendaten: wo Maschinen, Bänder und Ladeplätze stehen
+    layout.ts       Hallenlayout und AGV-Wegenetz (Zeichnung)
+  store/          Zustand-Store: Simulationszustand, Ereignisse, Auswahl, Kamera
+  scene/          3D-Szene; liest pro Bild aus dem Twin, ohne React-Re-Render
+  ui/             Kopfleiste, Ereignisprotokoll, Detailansicht
 ```
 
-Die Engine hält den gesamten Zustand, und Änderungen laufen nur über `FactoryCommands`. Die 3D-Komponenten lesen den Zustand direkt in `useFrame`. Die React-Panels bekommen etwa sieben Mal pro Sekunde einen unveränderlichen Snapshot aus dem Store. Dadurch läuft die Simulation flüssig, und das Dashboard rendert nicht in jedem Frame neu.
-
-Die Chaos-Tests lösen über Stunden zufällige Bedienereingriffe aus (Störungen, Stopps, Regeländerungen, Stornierungen) und prüfen dabei laufend, dass kein Werkstück verloren geht oder doppelt existiert, dass Reservierungen und Aufträge stimmen und dass die Anlage danach wieder anläuft.
-
-### SmartFactory und RouteMind anbinden
-
-```ts
-const ft = window.FactoryTwin;
-ft.subscribe('machine.fault', (e) => console.log(e.machineId, e.fault));
-ft.commands.createOrder({ product: 'GH200', quantity: 5, priority: 'eilig', source: 'smartfactory' });
-ft.getTelemetry();               // TelemetryFrame mit Maschinen, AGVs und Kennzahlen
-ft.setRoutePlanner(myPlanner);   // eigenen RoutePlanner einsetzen, z. B. RouteMind
-```
-
-SmartFactory wird als `FactoryConnector` angebunden. Der Adapter abonniert die Domain-Events, liest Telemetrie und steuert Aufträge ein. In der Demo bestellt er nach, sobald der Umlaufbestand niedrig ist.
-
-RouteMind ersetzt als `RoutePlanner` den lokalen Dijkstra-Planer zur Laufzeit. Der Demo-Adapter weicht Staus aus, indem Kanten in der Nähe anderer Fahrzeuge teurer werden.
-
-Für eine echte Anbindung über REST, MQTT oder OPC UA tauscht man nur den Adapter. Engine und UI bleiben gleich.
+Die Oberfläche enthält keine Geschäftsregeln. Jeder Befehl geht als JSON an den Java-Kern und wird dort geprüft; lehnt die Anlage ab, zeigt die Kopfleiste den Grund.
 
 ## Deployment
 

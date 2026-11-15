@@ -1,8 +1,11 @@
 package io.nexus.app.plant;
 
 import io.nexus.app.event.SimRun;
+import io.nexus.contracts.json.JsonReader;
 import io.nexus.plant.Plant;
+import io.nexus.plant.PlantCommands;
 import io.nexus.plant.PlantJson;
+import io.nexus.plant.PlantQueries;
 import io.nexus.plant.PlantRules;
 import io.nexus.sim.SimRules;
 import io.nexus.smartfactory.planning.DispatchRule;
@@ -12,8 +15,10 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -102,5 +107,27 @@ class SimController {
   @GetMapping(value = "/frame", produces = MediaType.APPLICATION_JSON_VALUE)
   String frame() {
     return PlantJson.frame(plant.frame());
+  }
+
+  /**
+   * A command in the core's JSON (see PlantCommands): the same format and checks as in the browser. Only
+   * application/json: a foreign page cannot send that without a CORS preflight, which this server refuses.
+   */
+  @PostMapping(value = "/commands", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+  ResponseEntity<String> command(@RequestBody String json) {
+    return answer(PlantCommands.apply(plant, json));
+  }
+
+  /** A read-only question in the core's JSON (see PlantQueries). */
+  @PostMapping(value = "/queries", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+  ResponseEntity<String> query(@RequestBody String json) {
+    return answer(PlantQueries.apply(plant, json));
+  }
+
+  /** The core's answer unchanged; its status field, if any, becomes the HTTP status. */
+  private static ResponseEntity<String> answer(String json) {
+    Object status = ((Map<?, ?>) JsonReader.parse(json)).get("status");
+    return ResponseEntity.status(status instanceof Long s ? s.intValue() : 200)
+        .contentType(MediaType.APPLICATION_JSON).body(json);
   }
 }

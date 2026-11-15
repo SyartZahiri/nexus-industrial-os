@@ -1,12 +1,8 @@
 import { Component, lazy, Suspense, useEffect, type ReactNode } from 'react';
-import { command, startSimulationLoop, useFactory, type CameraPreset, type RightTab } from './store/factoryStore';
+import { control, useFactory, type CameraPreset, type RightTab } from './store/factoryStore';
 import { STATUS_COLOR, STATUS_SHORT } from './ui/format';
 import { DetailPanel } from './ui/panels/DetailPanel';
 import { EventLog } from './ui/panels/EventLog';
-import { IntegrationPanel } from './ui/panels/IntegrationPanel';
-import { KpiPanel } from './ui/panels/KpiPanel';
-import { OrdersPanel } from './ui/panels/OrdersPanel';
-import { RulesPanel } from './ui/panels/RulesPanel';
 import { SPEEDS, TopBar } from './ui/panels/TopBar';
 import { labelPortal } from './scene/labelPortal';
 import { cx } from './ui/primitives';
@@ -46,8 +42,8 @@ function ViewportOverlay() {
   const showLabels = useFactory((s) => s.showLabels);
   const showPaths = useFactory((s) => s.showPaths);
   const toggle = useFactory((s) => s.toggle);
-  const running = useFactory((s) => s.snap.running);
-  const speed = useFactory((s) => s.snap.speed);
+  const running = useFactory((s) => s.sim.running);
+  const speed = useFactory((s) => s.sim.speed);
   return (
     <>
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 p-2.5">
@@ -82,7 +78,7 @@ function ViewportOverlay() {
 
       <div className="pointer-events-none absolute bottom-2.5 left-2.5 hidden rounded-lg border border-line bg-ink-1/80 px-2.5 py-2 backdrop-blur-md @md:block">
         <div className="grid grid-cols-4 gap-x-3 gap-y-1">
-          {(['RUNNING', 'IDLE', 'SETUP', 'BLOCKED', 'STOPPED', 'FAULT', 'REPAIR', 'MAINTENANCE'] as const).map((s) => (
+          {(['RUNNING', 'IDLE', 'SETUP', 'BLOCKED', 'STOPPED', 'FAULT', 'REPAIR', 'MAINTENANCE', 'UNKNOWN'] as const).map((s) => (
             <span key={s} className="flex items-center gap-1.5 text-[10px] text-txt-2">
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[s] }} />
               {STATUS_SHORT[s]}
@@ -100,15 +96,12 @@ function ViewportOverlay() {
 
 const TABS: { id: RightTab; label: string }[] = [
   { id: 'details', label: 'Anlage' },
-  { id: 'orders', label: 'Aufträge' },
-  { id: 'rules', label: 'Regeln' },
-  { id: 'integration', label: 'Schnittstellen' },
+  { id: 'events', label: 'Ereignisse' },
 ];
 
 function RightPanel() {
   const tab = useFactory((s) => s.rightTab);
   const setTab = useFactory((s) => s.setRightTab);
-  const openOrders = useFactory((s) => s.snap.kpi.openOrders);
   return (
     <div className="flex h-full flex-col">
       <nav className="flex shrink-0 gap-0.5 border-b border-line px-2 pt-2" role="tablist" aria-label="Detailbereiche">
@@ -126,15 +119,12 @@ function RightPanel() {
             )}
           >
             {t.label}
-            {t.id === 'orders' && <span className="rounded bg-ink-4 px-1 font-mono text-[10px] text-txt-2">{openOrders}</span>}
           </button>
         ))}
       </nav>
       <div id="right-tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`} className="scroll-thin safe-bottom min-h-0 flex-1 overflow-y-auto p-3">
         {tab === 'details' && <DetailPanel />}
-        {tab === 'orders' && <OrdersPanel />}
-        {tab === 'rules' && <RulesPanel />}
-        {tab === 'integration' && <IntegrationPanel />}
+        {tab === 'events' && <EventLog />}
       </div>
     </div>
   );
@@ -150,8 +140,8 @@ function useShortcuts() {
       const k = e.key.toLowerCase();
       if (e.key === ' ') {
         e.preventDefault();
-        command((en) => (en.state.running ? en.pause() : en.play()));
-      } else if (/^[1-5]$/.test(e.key)) command((en) => en.setSpeed(SPEEDS[Number(e.key) - 1]));
+        void (st.sim.running ? control.pause() : control.play());
+      } else if (/^[1-5]$/.test(e.key)) void control.setSpeed(SPEEDS[Number(e.key) - 1]);
       else if (e.key === 'Escape') st.select(null);
       else if (k === 'f' && st.selected) st.select(st.selected, true);
       else if (k === 'l') st.toggle('showLabels');
@@ -167,10 +157,8 @@ function useShortcuts() {
 }
 
 export default function App() {
-  const leftOpen = useFactory((s) => s.leftOpen);
   const rightOpen = useFactory((s) => s.rightOpen);
   const setPanel = useFactory((s) => s.setPanel);
-  useEffect(() => startSimulationLoop(), []);
   useShortcuts();
 
   return (
@@ -178,26 +166,15 @@ export default function App() {
       <TopBar />
       <div className="relative flex min-h-0 flex-1">
         {/* mobile backdrop */}
-        {(leftOpen || rightOpen) && (
+        {rightOpen && (
           <button
             aria-label="Panels schließen"
             className="absolute inset-0 z-10 bg-black/40 lg:hidden"
             onClick={() => {
-              setPanel('leftOpen', false);
               setPanel('rightOpen', false);
             }}
           />
         )}
-        <aside
-          aria-label="Kennzahlen und Anlagenübersicht"
-          className={cx(
-            'scroll-thin safe-bottom z-20 w-[300px] max-w-[88vw] lg:w-[264px] xl:w-[300px] shrink-0 overflow-y-auto border-r border-line bg-ink-1 p-3 transition-transform duration-300 ease-[var(--ease-drawer)]',
-            'absolute inset-y-0 left-0 lg:static',
-            leftOpen ? 'translate-x-0' : '-translate-x-full lg:hidden',
-          )}
-        >
-          <KpiPanel />
-        </aside>
         <main className="relative flex min-w-0 flex-1 flex-col">
           <div className="@container relative min-h-0 flex-1 touch-none" role="region" aria-label="3D-Ansicht der Fabrikhalle. Alle Anlagen lassen sich auch über die Anlagenliste auswählen.">
             <SceneBoundary>
@@ -217,10 +194,9 @@ export default function App() {
             <div ref={(el) => { if (el) labelPortal.current = el; }} className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true" />
             <ViewportOverlay />
           </div>
-          <EventLog />
         </main>
         <aside
-          aria-label="Details, Aufträge, Regeln und Schnittstellen"
+          aria-label="Anlagendetails und Ereignisse"
           className={cx(
             'z-20 w-[360px] max-w-[92vw] lg:w-[320px] xl:w-[360px] shrink-0 border-l border-line bg-ink-1 transition-transform duration-300 ease-[var(--ease-drawer)]',
             'absolute inset-y-0 right-0 lg:static',

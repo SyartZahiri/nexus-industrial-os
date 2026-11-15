@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Machine } from '../sim/types';
+import type { SceneMachine as Machine } from '../twin/types';
 
 /**
  * Per-frame visual runtime data shared between 3D components (not part of the simulation state).

@@ -43,26 +43,34 @@ public class PlantSocket extends TextWebSocketHandler {
   public static final int MAX_CLIENTS = 50;
   private static final long FRAME_REFRESH_MS = 1_000;
   private static final long SEND_TIMEOUT_MS = 2_000;
+  /**
+   * Distinguishes this server process: the embedded database starts its run numbers at 1 again after a restart, so a
+   * run id alone would let a reconnecting client take a new run for the one it knew.
+   */
+  private static final String BOOT = Long.toHexString(new java.security.SecureRandom().nextLong());
 
   private final Plant plant;
   private final JdbcEventLog events;
   private final SimRun run;
   private final EventBus bus;
+  private final SimulationLoop loop;
   private final Map<String, WebSocketSession> clients = new ConcurrentHashMap<>();
   private ScheduledExecutorService sender;
 
   private long sentRun = -1;
   private long sentSeq;
   private String sentFrame;
+  private String sentSim;
   private long sentFrameSimTime = -1;
   private long sentFrameAt;
   private boolean failing;
 
-  public PlantSocket(Plant plant, JdbcEventLog events, SimRun run, EventBus bus) {
+  public PlantSocket(Plant plant, JdbcEventLog events, SimRun run, EventBus bus, SimulationLoop loop) {
     this.plant = plant;
     this.events = events;
     this.run = run;
     this.bus = bus;
+    this.loop = loop;
   }
 
   public PlantSocket start() {
@@ -105,9 +113,24 @@ public class PlantSocket extends TextWebSocketHandler {
           sentSeq = events.lastSeq(sentRun);
         }
       }
-      clients.put(session.getId(), new ConcurrentWebSocketSessionDecorator(session, (int) SEND_TIMEOUT_MS, 1_048_576));
-      sentFrame = null;          // the newcomer needs a frame now, even if nothing changed
+      // the newcomer first learns which run it is in; after a reconnect it compares with the run it knew
+      String hello;
+      synchronized (bus) {
+        hello = new JsonWriter().beginObject().name("type").value("hello").name("run").value(runKey(run.id()))
+            .name("seed").value(run.seed()).endObject().toString();
+      }
+      // through the decorator, so the greeting has the same 2 s send limit as every other message; still under this
+      // monitor (never under the platform lock), so it reaches the client before the sender thread's first frame
+      var client = new ConcurrentWebSocketSessionDecorator(session, (int) SEND_TIMEOUT_MS, 1_048_576);
+      client.sendMessage(new TextMessage(hello));
+      clients.put(session.getId(), client);
+      sentFrame = null;          // the newcomer needs a frame and the simulation state now
+      sentSim = null;
     }
+  }
+
+  private static String runKey(long runId) {
+    return BOOT + ":" + runId;
   }
 
   @Override
@@ -130,16 +153,21 @@ public class PlantSocket extends TextWebSocketHandler {
     if (clients.isEmpty()) return;
     String reset = null;
     String frame = null;
+    String sim = null;
     List<JdbcEventLog.Sequenced> fresh;
     synchronized (bus) {
       long currentRun = run.id();
       if (currentRun != sentRun) {
-        reset = new JsonWriter().beginObject().name("type").value("reset").name("seed").value(run.seed())
-            .endObject().toString();
+        reset = new JsonWriter().beginObject().name("type").value("reset").name("run").value(runKey(currentRun))
+            .name("seed").value(run.seed()).endObject().toString();
         sentRun = currentRun;
         sentSeq = 0;
         sentFrame = null;
+        sentSim = null;
       }
+      String state = new JsonWriter().beginObject().name("type").value("sim").name("running").value(loop.running())
+          .name("speed").value(loop.speed()).name("seed").value(run.seed()).endObject().toString();
+      if (!state.equals(sentSim)) sim = state;
       fresh = events.eventsAfter(currentRun, sentSeq, 1_000);
       long now = System.currentTimeMillis();
       long simTime = plant.nowMs();
@@ -150,6 +178,10 @@ public class PlantSocket extends TextWebSocketHandler {
       }
     }
     if (reset != null) send(reset);
+    if (sim != null) {
+      send(sim);
+      sentSim = sim;
+    }
     if (frame != null && !frame.equals(sentFrame)) {
       send(new JsonWriter().beginObject().name("type").value("frame").name("frame").raw(frame).endObject().toString());
       sentFrame = frame;

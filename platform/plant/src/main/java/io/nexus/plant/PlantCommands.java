@@ -99,12 +99,12 @@ public final class PlantCommands {
             ? DispatchRule.valueOf(choice(c, "dispatchRule", "PRIORITY", "EDD", "FIFO", "SPT")) : r.dispatchRule());
   }
 
-  private static String error(int status, String message) {
+  static String error(int status, String message) {
     return new JsonWriter().beginObject().name("ok").value(false).name("status").value(status)
         .name("message").value(message).endObject().toString();
   }
 
-  private static String text(Map<String, Object> c, String field) {
+  static String text(Map<String, Object> c, String field) {
     if (!(c.get(field) instanceof String s) || s.isBlank()) throw DomainException.invalid("Feld " + field + " fehlt");
     return s;
   }
@@ -122,7 +122,7 @@ public final class PlantCommands {
   }
 
   /** A whole number that fits an int; anything larger is refused, never cut to another value. */
-  private static int whole(Map<String, Object> c, String field) {
+  static int whole(Map<String, Object> c, String field) {
     long n = number(c, field);
     if (n < Integer.MIN_VALUE || n > Integer.MAX_VALUE) throw DomainException.invalid("Feld " + field + " ist zu gross");
     return (int) n;

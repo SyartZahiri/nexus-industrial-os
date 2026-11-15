@@ -1,7 +1,7 @@
 import { useFrame } from '@react-three/fiber';
 import { useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import * as THREE from 'three';
-import { HALL, PATH_GRAPH } from '../sim/layout';
+import { HALL, PATH_GRAPH } from '../twin/layout';
 import { useFactory } from '../store/factoryStore';
 import { floorRoughness, floorTexture, MAT } from './materials';
 

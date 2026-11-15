@@ -98,6 +98,33 @@ class SimApiTest {
   }
 
   @Test
+  void commandsAndQueriesUseTheCoresFormat() throws Exception {
+    var refused = send("POST", "/api/v1/sim/commands", "{\"command\":\"machineRepair\",\"machineId\":\"CNC-01\"}");
+    assertThat(refused.statusCode()).isEqualTo(409);
+    assertThat(refused.body()).contains("\"ok\":false").contains("CNC-01");
+    var created = send("POST", "/api/v1/sim/commands",
+        "{\"command\":\"createOrder\",\"productId\":\"FP12\",\"quantity\":1,\"priority\":\"NORMAL\",\"dueInMinutes\":60}");
+    assertThat(created.statusCode()).isEqualTo(200);
+    assertThat(created.body()).contains("\"ok\":true");
+    var rules = send("POST", "/api/v1/sim/queries", "{\"query\":\"rules\"}");
+    assertThat(rules.statusCode()).isEqualTo(200);
+    assertThat(rules.body()).contains("\"dispatchRule\":\"PRIORITY\"");
+  }
+
+  /** Security review: a foreign page may post text/plain without a CORS preflight; only JSON is accepted. */
+  @Test
+  void aCrossSiteFormPostIsRefused() throws Exception {
+    for (String path : List.of("/api/v1/sim/commands", "/api/v1/sim/queries")) {
+      var r = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+          .header("Content-Type", "text/plain")
+          .POST(HttpRequest.BodyPublishers.ofString("{\"command\":\"machineFault\",\"machineId\":\"CNC-01\"}"))
+          .build(), HttpResponse.BodyHandlers.ofString());
+      assertThat(r.statusCode()).as(path).isEqualTo(415);
+    }
+    assertThat(plant.machines().views().getFirst().status()).isNotEqualTo(io.nexus.contracts.state.MachineStatus.FAULT);
+  }
+
+  @Test
   void invalidInputIs400() throws Exception {
     assertThat(send("PUT", "/api/v1/sim/speed", "{\"speed\":0}").statusCode()).isEqualTo(400);
     assertThat(send("PUT", "/api/v1/sim/speed", "{\"speed\":30}").statusCode()).isEqualTo(400);

@@ -34,8 +34,8 @@ class SocketConfig implements WebSocketConfigurer {
   @Configuration
   static class Beans {
     @Bean(destroyMethod = "stop")
-    PlantSocket plantSocket(Plant plant, JdbcEventLog events, SimRun run, EventBus bus) {
-      return new PlantSocket(plant, events, run, bus).start();
+    PlantSocket plantSocket(Plant plant, JdbcEventLog events, SimRun run, EventBus bus, SimulationLoop loop) {
+      return new PlantSocket(plant, events, run, bus, loop).start();
     }
   }
 }
