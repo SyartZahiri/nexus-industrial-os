@@ -36,7 +36,7 @@ export const AREAS: Area[] = [
     summary: 'Auslieferung an Kunden: Touren, Fahrzeuge und Karte.' },
   { id: 'machines', label: 'Machines', group: 'Betrieb', hash: '#/machines', comesWith: null,
     summary: 'Jede Maschine mit Zustand, Sensoren und Verlauf.' },
-  { id: 'warehouse', label: 'Warehouse', group: 'Betrieb', hash: '#/warehouse', comesWith: 'M2-C',
+  { id: 'warehouse', label: 'Warehouse', group: 'Betrieb', hash: '#/warehouse', comesWith: null,
     summary: 'Bestände, Reservierungen und Wareneingang.' },
   { id: 'analytics', label: 'Analytics', group: 'Auswertung', hash: '#/analytics', comesWith: 'M2-C',
     summary: 'Durchsatz, OEE, Durchlaufzeiten und Engpass aus den Ereignissen.' },

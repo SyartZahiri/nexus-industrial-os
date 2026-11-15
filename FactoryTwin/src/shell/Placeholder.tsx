@@ -7,7 +7,6 @@ const MEANWHILE: Partial<Record<AreaId, { to: AreaId; text: string }>> = {
   smartfactory: { to: 'overview', text: 'Offene und verspätete Aufträge zeigt die Overview.' },
   flowpilot: { to: 'twin', text: 'AGVs und Transporte siehst du in FactoryTwin; ein Klick auf ein AGV zeigt seinen Auftrag.' },
   routemind: { to: 'overview', text: 'Fertigware und Versand stehen in der Overview und im Lager von FactoryTwin.' },
-  warehouse: { to: 'twin', text: 'Ein Klick auf ein Lager in FactoryTwin zeigt alle Bestände.' },
   analytics: { to: 'overview', text: 'Durchsatz, OEE, Termintreue und Durchlaufzeit zeigt die Overview.' },
   scenarios: { to: 'settings', text: 'Zufallsstörungen und Auftragsregeln lassen sich in Settings einstellen.' },
 };
