@@ -162,3 +162,102 @@ export interface Rules {
   shipping: boolean;
   dispatchRule: 'PRIORITY' | 'EDD' | 'FIFO' | 'SPT';
 }
+
+export type Priority = 'NORMAL' | 'HOCH' | 'EILIG';
+
+export interface ProductInfo {
+  id: string;
+  name: string;
+  shortName: string;
+  finishedMaterialId: string;
+  routing: { seq: number; process: string; baseTimeS: number; preferredMachineId: string }[];
+  bom: { seq: number; materialId: string; quantity: number }[];
+}
+
+export interface PlannedOp {
+  orderId: string;
+  seq: number;
+  machineId: string;
+  startMs: number;
+  endMs: number;
+  setupMs: number;
+}
+
+export interface Schedule {
+  rule: Rules['dispatchRule'];
+  ops: PlannedOp[];
+  unplannable: { orderId: string; seq: number; reason: string }[];
+  lateOrders: string[];
+  utilization: Record<string, number>;
+  bottleneckMachineId: string | null;
+}
+
+export interface OrderDetail {
+  order: {
+    id: string;
+    productId: string;
+    quantity: number;
+    priority: Priority;
+    status: string;
+    dueAtMs: number;
+    createdAtMs: number;
+    completedAtMs: number | null;
+    good: number;
+    scrapped: number;
+  };
+  operations: {
+    seq: number;
+    process: string;
+    machineId: string | null;
+    status: string;
+    plannedStartMs: number | null;
+    plannedEndMs: number | null;
+    startedAtMs: number | null;
+    endedAtMs: number | null;
+    good: number;
+    scrap: number;
+  }[];
+  materials: {
+    stepSeq: number;
+    kind: 'SUPPLY' | 'WIP' | 'PUTAWAY';
+    materialId: string;
+    quantity: number;
+    transportId: string | null;
+    delivered: boolean;
+  }[];
+}
+
+export interface WarehouseInfo {
+  materials: { id: string; name: string; kind: string; reorderPoint: number; reorderQty: number }[];
+  locations: { id: string; name: string; zone: string; capacity: number }[];
+}
+
+export interface NetworkNode {
+  id: string;
+  x: number;
+  z: number;
+  dock: boolean;
+}
+
+export interface NetworkEdge {
+  id: string;
+  from: string;
+  to: string;
+  length: number;
+  blocked: boolean;
+}
+
+export interface Network {
+  nodes: NetworkNode[];
+  edges: NetworkEdge[];
+}
+
+/** One section of the key-figure history; oee is the mean over the machines, null without any machine time. */
+export interface KpiBucket {
+  fromMs: number;
+  toMs: number;
+  throughputPerHour: number;
+  onTimeRate: number;
+  avgLeadTimeS: number;
+  oee: number | null;
+}

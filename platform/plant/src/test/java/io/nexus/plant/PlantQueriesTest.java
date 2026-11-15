@@ -41,4 +41,83 @@ class PlantQueriesTest {
     assertThat(answer(plant, "{\"query\":\"geheim\"}")).containsEntry("status", 400L);
     assertThat(answer(plant, "kein json")).containsEntry("status", 400L);
   }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void productsCarryRoutingAndBillOfMaterial() {
+    Plant plant = Plant.inMemory(7, PlantRules.DEFAULT);
+    var a = answer(plant, "{\"query\":\"products\"}");
+    assertThat(a).containsEntry("ok", true);
+    var products = (java.util.List<Map<String, Object>>) a.get("result");
+    assertThat(products).extracting(p -> p.get("id")).contains("GH200", "AW50", "FP12", "MT7");
+    var gh = products.stream().filter(p -> p.get("id").equals("GH200")).findFirst().orElseThrow();
+    assertThat((java.util.List<?>) gh.get("routing")).isNotEmpty();
+    assertThat(gh).containsKeys("name", "shortName", "finishedMaterialId", "bom");
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void scheduleNamesRuleOpsAndBottleneck() {
+    Plant plant = Plant.inMemory(7, PlantRules.DEFAULT);
+    plant.advance(20 * 60_000);
+    var result = (Map<String, Object>) answer(plant, "{\"query\":\"schedule\"}").get("result");
+    assertThat(result).containsKeys("rule", "ops", "unplannable", "lateOrders", "utilization", "bottleneckMachineId");
+    assertThat(result).containsEntry("rule", "PRIORITY");
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void anOrderComesWithItsOperationsAndMaterials() {
+    Plant plant = Plant.inMemory(7, PlantRules.DEFAULT);
+    plant.advance(20 * 60_000);
+    String id = plant.smartFactory().orders().get(0).id();
+    var result = (Map<String, Object>) answer(plant, "{\"query\":\"order\",\"orderId\":\"" + id + "\"}").get("result");
+    assertThat((Map<String, Object>) result.get("order")).containsEntry("id", id);
+    assertThat((java.util.List<?>) result.get("operations")).isNotEmpty();
+    assertThat(result).containsKey("materials");
+  }
+
+  @Test
+  void anUnknownOrderIsNotFound() {
+    Plant plant = Plant.inMemory(7, PlantRules.DEFAULT);
+    assertThat(answer(plant, "{\"query\":\"order\",\"orderId\":\"PO-9999\"}")).containsEntry("ok", false)
+        .containsEntry("status", 404L);
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void warehouseListsMaterialsAndLocations() {
+    Plant plant = Plant.inMemory(7, PlantRules.DEFAULT);
+    var result = (Map<String, Object>) answer(plant, "{\"query\":\"warehouse\"}").get("result");
+    assertThat((java.util.List<?>) result.get("materials")).isNotEmpty();
+    assertThat((java.util.List<Map<String, Object>>) result.get("locations")).allSatisfy(l ->
+        assertThat(l).containsKeys("id", "name", "zone", "capacity"));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void networkShowsABlockedEdge() {
+    Plant plant = Plant.inMemory(7, PlantRules.DEFAULT);
+    var edges = (java.util.List<Map<String, Object>>) ((Map<String, Object>) answer(plant,
+        "{\"query\":\"network\"}").get("result")).get("edges");
+    String first = (String) edges.get(0).get("id");
+    PlantCommands.apply(plant, "{\"command\":\"edgeBlock\",\"edgeId\":\"" + first + "\"}");
+    var after = (java.util.List<Map<String, Object>>) ((Map<String, Object>) answer(plant,
+        "{\"query\":\"network\"}").get("result")).get("edges");
+    assertThat(after.get(0)).containsEntry("id", first).containsEntry("blocked", true);
+    assertThat(after.get(1)).containsEntry("blocked", false);
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void seriesNeverStartsBeforeTheRun() {
+    Plant plant = Plant.inMemory(7, PlantRules.DEFAULT);
+    plant.advance(25 * 60_000);
+    var buckets = (java.util.List<Map<String, Object>>) answer(plant,
+        "{\"query\":\"kpiSeries\",\"bucketMinutes\":10,\"buckets\":12}").get("result");
+    assertThat(buckets).hasSize(3);
+    assertThat(buckets.get(0)).containsEntry("fromMs", 0L).containsEntry("toMs", 300_000L);
+    assertThat(buckets.get(2)).containsEntry("fromMs", 900_000L).containsEntry("toMs", 1_500_000L);
+    assertThat(answer(plant, "{\"query\":\"kpiSeries\",\"bucketMinutes\":0}")).containsEntry("status", 400L);
+  }
 }
