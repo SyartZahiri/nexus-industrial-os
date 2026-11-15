@@ -42,7 +42,7 @@ export const AREAS: Area[] = [
     summary: 'Durchsatz, OEE, Durchlaufzeiten und Engpass aus den Ereignissen.' },
   { id: 'events', label: 'Event Monitor', group: 'Auswertung', hash: '#/events', comesWith: null,
     summary: 'Jedes Ereignis der Anlage, filterbar nach Auftrag, Quelle und Typ.' },
-  { id: 'scenarios', label: 'Scenario Lab', group: 'Auswertung', hash: '#/scenarios', comesWith: 'M3',
+  { id: 'scenarios', label: 'Scenario Lab', group: 'Auswertung', hash: '#/scenarios', comesWith: null,
     summary: 'Störungen und Engpässe gezielt auslösen und die Reaktion verfolgen.' },
   { id: 'settings', label: 'Settings', group: 'System', hash: '#/settings', comesWith: null,
     summary: 'Regeln der Simulation, Tempo, Seed und Darstellung.' },

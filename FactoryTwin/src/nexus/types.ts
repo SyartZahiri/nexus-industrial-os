@@ -261,3 +261,21 @@ export interface KpiBucket {
   avgLeadTimeS: number;
   oee: number | null;
 }
+
+export type ScenarioState = 'WAITING' | 'RUNNING' | 'PASSED' | 'FAILED';
+
+/** One run of a scenario (core query "scenarios"); steps carry simulation time and a sentence. */
+export interface ScenarioRun {
+  runId: string;
+  scenario: string;
+  state: ScenarioState;
+  orderId: string | null;
+  startedAtMs: number;
+  finishedAtMs: number | null;
+  steps: { atMs: number; text: string }[];
+}
+
+export interface ScenarioList {
+  definitions: { id: string; title: string; trigger: string; expected: string; limitMinutes: number }[];
+  runs: ScenarioRun[];
+}
