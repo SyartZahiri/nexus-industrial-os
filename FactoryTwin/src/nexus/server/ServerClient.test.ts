@@ -150,4 +150,18 @@ describe('ServerClient', () => {
       message: 'nein',
     });
   });
+  it('aPageWithoutMatchesStillMovesTheCursorOn', async () => {
+    const { client } = setup([event(1), event(2), event(3)]); // all order.created
+    const page = await client.events({ type: 'machine.', limit: 3 });
+    expect(page).toEqual({ items: [], more: true, next: 3 });
+  });
+
+  it('asksTheServerOnlyForWhatItFiltersExactly', async () => {
+    const { client, fetch } = setup([]);
+    await client.events({ type: 'machine.', correlationId: 'PO-0004', after: 7 });
+    await client.events({ type: 'decision' });
+    const urls = fetch.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/api/v1/events'));
+    expect(urls.at(-2)).toBe('http://host:5173/api/v1/events?after=7&limit=500&correlationId=PO-0004');
+    expect(urls.at(-1)).toBe('http://host:5173/api/v1/events?after=0&limit=500&type=decision');
+  });
 });

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { NexusClient } from '../nexus/client';
-import type { Command, NexusEvent, SimState } from '../nexus/types';
+import type { EventFilter, EventPage } from '../nexus/eventFilter';
+import type { Answer, Command, NexusEvent, Query, SimState } from '../nexus/types';
 import { toScene } from '../twin/sceneModel';
 import { Twin } from '../twin/twin';
 import type { SceneState } from '../twin/types';
@@ -32,6 +33,8 @@ interface FactoryStore {
   mode: 'browser' | 'server';
   connection: Connection;
   events: NexusEvent[];
+  /** Counts restarts, so views holding data of the old run (a page of events, the rules form) reload. */
+  run: number;
   /** The last reason the plant gave for refusing a command; shown until dismissed. */
   notice: string | null;
   selected: Selection | null;
@@ -63,6 +66,7 @@ export const useFactory = create<FactoryStore>((set, get) => ({
   mode: 'browser',
   connection: 'connecting',
   events: [],
+  run: 0,
   notice: null,
   selected: null,
   hovered: null,
@@ -116,7 +120,7 @@ export function startNexus(client: NexusClient): () => void {
     twin.apply(m, performance.now());
     switch (m.type) {
       case 'reset':
-        useFactory.setState({ events: [], scene: null });
+        useFactory.setState((s) => ({ events: [], scene: null, run: s.run + 1 }));
         break;
       case 'sim':
         useFactory.setState({ sim: { running: m.running, speed: m.speed, seed: m.seed } });
@@ -138,6 +142,16 @@ export function startNexus(client: NexusClient): () => void {
 function client(): NexusClient {
   if (!current) throw new Error('NexusClient nicht verbunden');
   return current;
+}
+
+/** Asks the plant; throws when no client is connected yet. */
+export function query<T>(q: Query): Promise<Answer<T>> {
+  return client().query<T>(q);
+}
+
+/** One page of the run's events that match the filter, oldest first. */
+export function eventPage(f: EventFilter): Promise<EventPage> {
+  return client().events(f);
 }
 
 /** Sends a command; if the plant refuses it, its reason becomes the notice and the result is false. */

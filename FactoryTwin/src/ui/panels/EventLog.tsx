@@ -37,7 +37,7 @@ export function EventLog() {
               <span className="h-1.5 w-1.5 self-center rounded-full" style={{ background: SEVERITY_COLOR[e.severity] }} />
               <span className="min-w-0 text-txt-1">
                 {eventText(e)}
-                {e.correlationId && <span className="ml-1.5 font-mono text-[10px] text-txt-3">{e.correlationId}</span>}
+                {e.correlationId && <span className="ml-1.5 font-mono text-[11px] text-txt-3">{e.correlationId}</span>}
               </span>
             </button>
           </li>

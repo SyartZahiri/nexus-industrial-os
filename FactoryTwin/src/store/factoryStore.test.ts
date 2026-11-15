@@ -13,6 +13,7 @@ function fakeClient(answer: Answer): { client: NexusClient; push: (m: NexusMessa
     },
     command: async () => answer,
     query: async () => ({ ok: true, result: {} }) as Answer<never>,
+    events: async () => ({ items: [], more: false, next: 0 }),
     play: async () => {},
     pause: async () => {},
     setSpeed: async () => {},
@@ -79,5 +80,13 @@ describe('factoryStore', () => {
     push({ type: 'reset', seed: 9 });
     expect(useFactory.getState().events).toEqual([]);
     expect(twin.latest).toBeNull();
+  });
+
+  it('countsRunsSoViewsOfTheOldRunCanReload', () => {
+    const { client, push } = fakeClient({ ok: true, result: null });
+    startNexus(client);
+    const before = useFactory.getState().run;
+    push({ type: 'reset', seed: 3 });
+    expect(useFactory.getState().run).toBe(before + 1);
   });
 });

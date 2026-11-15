@@ -19,7 +19,7 @@ npm run build      # statischer Build in dist/
 | Browser (Standard) | `npm run dev` | Der Java-Kern, mit TeaVM nach JavaScript übersetzt, in einem Web Worker. Kein Server nötig; nach dem Neuladen beginnt die Anlage von vorn. |
 | Server | `node scripts/run-server.mjs`, dann `npm run dev -- --mode server --port 5179` | Spring Boot mit PostgreSQL (eingebettet) und OPC UA. Vite leitet `/api` und `/ws` an `localhost:8080` weiter. |
 
-Mit `?seed=123` in der URL startet die Browser-Anlage mit einem anderen Seed. Die Kopfleiste zeigt die aktive Betriebsart und den Verbindungsstand.
+Mit `?seed=123` in der URL startet die Browser-Anlage mit einem anderen Seed. Der Fuss der Navigation zeigt die aktive Betriebsart und den Verbindungsstand.
 
 ## Was simuliert wird
 
@@ -36,15 +36,35 @@ Mit `?seed=123` in der URL startet die Browser-Anlage mit einem anderen Seed. Di
 
 Bei aktiver dynamischer Umplanung gehen Teile an andere Maschinen mit derselben Fähigkeit. Teile, die an einer gestörten Maschine warten, werden umgelagert, und beladene AGVs fahren ein anderes Ziel an. Mit statischem Arbeitsplan warten die Teile, und der Auftrag wird als blockiert markiert. Die Prüfzelle QC-01 hat absichtlich keine Ausweichmöglichkeit.
 
+## Bereiche
+
+Die Navigation links (unter 1024 px ein Menü) führt zu elf Bereichen. Die Simulationsleiste oben mit Uhr, Start/Pause, Tempo, Reset und den Zählern für Fehler und Warnungen steht über jedem Bereich. Jeder Bereich hat eine eigene Adresse (`#/overview`, `#/events/PO-0004` …), lässt sich also verlinken und mit Zurück verlassen.
+
+| Gruppe | Bereich | Stand |
+|---|---|---|
+| Betrieb | Overview | fertig: Durchsatz, OEE, Termintreue, Durchlaufzeit, Maschinenlage, offene und verspätete Aufträge, Meldungen |
+| Betrieb | FactoryTwin | fertig: 3D-Halle mit Anlagendetails und Ereignissen |
+| Betrieb | Machines | kommt mit M2-C |
+| Betrieb | Warehouse | kommt mit M2-C |
+| Systeme | SmartFactory | kommt mit M2-C |
+| Systeme | FlowPilot | kommt mit M2-C |
+| Systeme | RouteMind | kommt mit M4 |
+| Auswertung | Analytics | kommt mit M2-C |
+| Auswertung | Event Monitor | fertig: Filter nach Auftrag, Typ und Schweregrad, Live-Ansicht, ganze Geschichte seitenweise |
+| Auswertung | Scenario Lab | kommt mit M3 |
+| System | Settings | fertig: Regeln der Anlage, Tempo, Seed, Darstellung |
+
+Ein Bereich, der noch kommt, sagt, wofür er da ist und wo man das Gleiche heute schon sieht.
+
 ## Bedienung
 
-In der 3D-Ansicht wählt ein Klick eine Anlage aus, ein Doppelklick fährt die Kamera hin. Mit der linken Maustaste dreht man die Ansicht, mit der rechten verschiebt man sie, das Mausrad zoomt. Jede Anlage und beide Lager lassen sich auch über die Liste links auswählen.
+In der 3D-Ansicht wählt ein Klick eine Anlage aus, ein Doppelklick fährt die Kamera hin. Mit der linken Maustaste dreht man die Ansicht, mit der rechten verschiebt man sie, das Mausrad zoomt. Ein Klick auf eine Maschine in der Overview öffnet FactoryTwin mit dieser Maschine ausgewählt.
 
-Tastenkürzel: `Leertaste` startet und pausiert, `1` bis `5` stellen das Tempo von 1× bis 25×, `Q W E R T` wechseln die Kameraperspektive, `F` fokussiert die Auswahl, `L` schaltet die Beschriftungen, `P` die Fahrwege und `Esc` hebt die Auswahl auf.
+Tastenkürzel: `Leertaste` startet und pausiert, `1` bis `5` stellen das Tempo von 1× bis 25× (beides in jedem Bereich). Nur in FactoryTwin: `Q W E R T` wechseln die Kameraperspektive, `F` fokussiert die Auswahl, `L` schaltet die Beschriftungen, `P` die Fahrwege und `Esc` hebt die Auswahl auf.
 
 Mit `?seed=123` in der URL startet die Simulation mit einem festen Seed. Gleicher Seed und gleiche Eingriffe ergeben denselben Verlauf.
 
-Die Grafikqualität lässt sich oben rechts umstellen: Hoch mit Schatten und Bloom, Mittel ohne Post-Processing, Schnell ohne Schatten. Auf Mobilgeräten startet die App mit „Schnell“.
+Die Grafikqualität lässt sich in der Werkzeugleiste von FactoryTwin oder in Settings umstellen: Hoch mit Schatten und Bloom, Mittel ohne Post-Processing, Schnell ohne Schatten. Auf Mobilgeräten startet die App mit „Schnell“.
 
 ## Aufbau
 
@@ -61,10 +81,12 @@ src/
     layout.ts       Hallenlayout und AGV-Wegenetz (Zeichnung)
   store/          Zustand-Store: Simulationszustand, Ereignisse, Auswahl, Kamera
   scene/          3D-Szene; liest pro Bild aus dem Twin, ohne React-Re-Render
-  ui/             Kopfleiste, Ereignisprotokoll, Detailansicht
+  shell/          Bereiche, Hash-Routing, Navigation, Simulationsleiste, Platzhalter
+  areas/          die fertigen Bereiche: TwinArea, overview/, events/, settings/
+  ui/             Designsystem (kit/: Tabelle, Kennzahl, Zustandsmarke, Abschnitt, Feld), Zustandsfarben, Detailansicht
 ```
 
-Die Oberfläche enthält keine Geschäftsregeln. Jeder Befehl geht als JSON an den Java-Kern und wird dort geprüft; lehnt die Anlage ab, zeigt die Kopfleiste den Grund.
+Die Oberfläche enthält keine Geschäftsregeln. Jeder Befehl geht als JSON an den Java-Kern und wird dort geprüft; lehnt die Anlage ab, zeigt die Meldungszeile unter der Simulationsleiste den Grund.
 
 ## Deployment
 

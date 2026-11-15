@@ -127,3 +127,38 @@ export type NexusMessage =
   | { type: 'frame'; frame: Frame }
   | { type: 'events'; items: NexusEvent[] }
   | { type: 'connection'; state: 'connecting' | 'open' | 'closed' };
+
+/** Key figures of a time window, as the core's "kpis" query answers. */
+export interface Kpis {
+  fromMs: number;
+  toMs: number;
+  throughputPerHour: number;
+  avgLeadTimeS: number;
+  p90LeadTimeS: number;
+  onTimeRate: number;
+  bottleneckMachineId: string | null;
+  machines: Record<
+    string,
+    {
+      utilization: number;
+      availability: number;
+      performance: number;
+      quality: number;
+      oee: number;
+      timeInStatusMs: Record<string, number>;
+    }
+  >;
+}
+
+/** The plant's rules, exactly the fields of the "rules" query; setRules takes any subset of them. */
+export interface Rules {
+  randomFaults: boolean;
+  autoRepair: boolean;
+  autoMaintenance: boolean;
+  maintenanceThreshold: number;
+  autoOrders: boolean;
+  autoOrderIntervalMinutes: number;
+  maxOpenOrders: number;
+  shipping: boolean;
+  dispatchRule: 'PRIORITY' | 'EDD' | 'FIFO' | 'SPT';
+}

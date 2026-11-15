@@ -1,4 +1,5 @@
 import { Loop } from '../loop';
+import { filterEvents, type EventFilter } from '../eventFilter';
 import type { Answer, Command, Frame, NexusEvent, NexusMessage, Query } from '../types';
 
 export interface NexusCore {
@@ -14,6 +15,7 @@ export type WorkerRequest =
   | { id: number; kind: 'hello'; seed?: number }
   | { id: number; kind: 'command'; body: Command }
   | { id: number; kind: 'query'; body: Query }
+  | { id: number; kind: 'events'; filter: EventFilter }
   | { id: number; kind: 'play' }
   | { id: number; kind: 'pause' }
   | { id: number; kind: 'speed'; speed: number }
@@ -52,6 +54,8 @@ export class BrowserEngine {
       }
       case 'query':
         return { answer: JSON.parse(this.core.plantQuery(JSON.stringify(r.body))), messages: [] };
+      case 'events': // ponytail: parses the whole run's log per page; a core-side filter if runs grow very long
+        return { answer: filterEvents(JSON.parse(this.core.plantEventsFrom(0)) as NexusEvent[], r.filter), messages: [] };
       case 'play':
         this.loop.running = true;
         return { answer: null, messages: [this.sim()] };
@@ -61,11 +65,15 @@ export class BrowserEngine {
       case 'speed':
         this.loop.setSpeed(r.speed);
         return { answer: null, messages: [this.sim()] };
-      case 'reset':
+      case 'reset': {
+        // like Plant.reset on the server: a restart keeps the rules the user set
+        const rules = (JSON.parse(this.core.plantQuery('{"query":"rules"}')) as { result: object }).result;
         this.seed = r.seed ?? this.seed;
         this.core.plantStart(this.seed);
+        this.core.plantCommand(JSON.stringify({ command: 'setRules', ...rules }));
         this.sentEvents = 0;
         return { answer: null, messages: [{ type: 'reset', seed: this.seed }, this.sim(), this.frame()] };
+      }
     }
   }
 

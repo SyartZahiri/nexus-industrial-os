@@ -1,16 +1,31 @@
 import { SHIFT_START_HOUR } from '../twin/config';
 import type { AgvState, ConveyorStatus, MachineStatus } from '../twin/types';
 
+/**
+ * The state colours of Spec 14 (runs, waits, fault, maintenance …), the only colours that carry meaning, and their
+ * only definition. Hex values, because the 3D scene hands them to Three.js; the interface uses them as inline styles.
+ */
+export const STATE_HEX = {
+  run: '#22c55e',
+  idle: '#94a3b8',
+  setup: '#38bdf8',
+  wait: '#f59e0b',
+  fault: '#ef4444',
+  repair: '#fb923c',
+  maint: '#a78bfa',
+  unknown: '#6b7280',
+} as const;
+
 export const STATUS_COLOR: Record<MachineStatus, string> = {
-  RUNNING: '#22c55e',
-  IDLE: '#64748b',
-  SETUP: '#38bdf8',
-  BLOCKED: '#f59e0b',
-  STOPPED: '#94a3b8',
-  FAULT: '#ef4444',
-  REPAIR: '#fb923c',
-  MAINTENANCE: '#a78bfa',
-  UNKNOWN: '#6b7280',
+  RUNNING: STATE_HEX.run,
+  IDLE: STATE_HEX.idle,
+  SETUP: STATE_HEX.setup,
+  BLOCKED: STATE_HEX.wait,
+  STOPPED: STATE_HEX.idle,
+  FAULT: STATE_HEX.fault,
+  REPAIR: STATE_HEX.repair,
+  MAINTENANCE: STATE_HEX.maint,
+  UNKNOWN: STATE_HEX.unknown,
 };
 
 export const STATUS_LABEL: Record<MachineStatus, string> = {
@@ -38,10 +53,10 @@ export const STATUS_SHORT: Record<MachineStatus, string> = {
 };
 
 export const CONVEYOR_COLOR: Record<ConveyorStatus, string> = {
-  RUNNING: '#22c55e',
-  STOPPED: '#94a3b8',
-  FAULT: '#ef4444',
-  REPAIR: '#fb923c',
+  RUNNING: STATE_HEX.run,
+  STOPPED: STATE_HEX.idle,
+  FAULT: STATE_HEX.fault,
+  REPAIR: STATE_HEX.repair,
 };
 
 export const CONVEYOR_LABEL: Record<ConveyorStatus, string> = {
@@ -51,16 +66,17 @@ export const CONVEYOR_LABEL: Record<ConveyorStatus, string> = {
   REPAIR: 'Reparatur',
 };
 
+/** Driving and handling are one state ("unterwegs"); charging counts as running, the AGV is doing its job. */
 export const AGV_COLOR: Record<AgvState, string> = {
-  IDLE: '#cbd5e1',
-  TO_PICKUP: '#38bdf8',
-  LOADING: '#2dd4bf',
-  TO_DROP: '#2dd4bf',
-  UNLOADING: '#2dd4bf',
-  TO_CHARGE: '#a3e635',
-  CHARGING: '#22c55e',
-  OFFLINE: '#64748b',
-  FAULT: '#ef4444',
+  IDLE: STATE_HEX.idle,
+  TO_PICKUP: STATE_HEX.setup,
+  LOADING: STATE_HEX.setup,
+  TO_DROP: STATE_HEX.setup,
+  UNLOADING: STATE_HEX.setup,
+  TO_CHARGE: STATE_HEX.setup,
+  CHARGING: STATE_HEX.run,
+  OFFLINE: STATE_HEX.unknown,
+  FAULT: STATE_HEX.fault,
 };
 
 export const AGV_LABEL: Record<AgvState, string> = {
@@ -78,10 +94,10 @@ export const AGV_LABEL: Record<AgvState, string> = {
 export type EventSeverity = 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR';
 
 export const SEVERITY_COLOR: Record<EventSeverity, string> = {
-  INFO: '#64748b',
-  SUCCESS: '#22c55e',
-  WARNING: '#f59e0b',
-  ERROR: '#ef4444',
+  INFO: STATE_HEX.idle,
+  SUCCESS: STATE_HEX.run,
+  WARNING: STATE_HEX.wait,
+  ERROR: STATE_HEX.fault,
 };
 
 const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');

@@ -1,4 +1,5 @@
 import type { NexusClient } from '../client';
+import { matches, PAGE as EVENT_PAGE, type EventFilter, type EventPage } from '../eventFilter';
 import type { Answer, Command, NexusEvent, NexusMessage, Query } from '../types';
 
 interface Deps {
@@ -155,6 +156,20 @@ export class ServerClient implements NexusClient {
 
   query<T>(q: Query): Promise<Answer<T>> {
     return this.post('/api/v1/sim/queries', q) as Promise<Answer<T>>;
+  }
+
+  /** The server filters type exactly and knows no severity: prefix and severity are filtered here. */
+  async events(f: EventFilter): Promise<EventPage> {
+    const limit = f.limit ?? EVENT_PAGE;
+    const after = f.after ?? 0;
+    const params = new URLSearchParams({ after: String(after), limit: String(limit) });
+    if (f.source) params.set('source', f.source);
+    if (f.correlationId) params.set('correlationId', f.correlationId);
+    if (f.type && !f.type.endsWith('.')) params.set('type', f.type);
+    const r = await this.deps.fetch(`${this.base}/api/v1/events?${params}`, { headers: { Accept: 'application/json' } });
+    if (!r.ok) throw new Error(`Ereignisse nicht lesbar (${r.status})`);
+    const page = (await r.json()) as NexusEvent[];
+    return { items: page.filter((e) => matches(e, f)), more: page.length === limit, next: page.at(-1)?.seq ?? after };
   }
 
   private async control(method: string, path: string, body?: unknown): Promise<void> {
