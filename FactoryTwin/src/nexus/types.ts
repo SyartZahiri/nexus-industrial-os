@@ -149,3 +149,16 @@ export interface Kpis {
     }
   >;
 }
+
+/** The plant's rules, exactly the fields of the "rules" query; setRules takes any subset of them. */
+export interface Rules {
+  randomFaults: boolean;
+  autoRepair: boolean;
+  autoMaintenance: boolean;
+  maintenanceThreshold: number;
+  autoOrders: boolean;
+  autoOrderIntervalMinutes: number;
+  maxOpenOrders: number;
+  shipping: boolean;
+  dispatchRule: 'PRIORITY' | 'EDD' | 'FIFO' | 'SPT';
+}

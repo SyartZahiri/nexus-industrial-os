@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { EventsArea } from '../areas/events/EventsArea';
 import { OverviewArea } from '../areas/overview/OverviewArea';
+import { SettingsArea } from '../areas/settings/SettingsArea';
 import { TwinArea } from '../areas/TwinArea';
 import { cx } from '../ui/primitives';
 import { areaById, type AreaId } from './areas';
@@ -16,6 +17,8 @@ function page(area: AreaId, param: string | null): ReactNode {
       return <OverviewArea />;
     case 'events':
       return <EventsArea filterId={param} />;
+    case 'settings':
+      return <SettingsArea />;
     case 'twin':
       return <TwinArea />;
     default:
