@@ -77,6 +77,10 @@ public final class PlantCommands {
       case "edgeUnblock" -> fp.setEdgeBlocked(text(c, "edgeId"), false);
       case "stockReceipt" -> fp.receive(text(c, "materialId"), text(c, "locationId"), whole(c, "quantity"));
       case "setRules" -> plant.setRules(rules(plant.rules(), c));
+      case "runScenario" -> {
+        String runId = plant.startScenario(text(c, "scenario"));
+        return new JsonWriter().beginObject().name("runId").value(runId).endObject().toString();
+      }
       default -> throw DomainException.invalid("Unbekannter Befehl: " + command);
     }
     return "null";

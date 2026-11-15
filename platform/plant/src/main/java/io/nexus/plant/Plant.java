@@ -47,6 +47,7 @@ public final class Plant {
   private final Shipping shipping = new Shipping();
   private final MemoryEventLog memoryLog;
   private PlantRules rules;
+  private final Scenarios scenarios;
 
   /** Everything in memory: the browser runtime and core tests. */
   public static Plant inMemory(long seed, PlantRules rules) {
@@ -84,6 +85,7 @@ public final class Plant {
     this.machines = machines;
     this.orders = new OrderGenerator(new SeededRandom(seed).fork("orders"));
     this.memoryLog = memoryLog;
+    this.scenarios = new Scenarios(smartFactory, flowPilot, bus);
     machines.reset(seed);
     applyRules(rules);
   }
@@ -110,6 +112,7 @@ public final class Plant {
       phase("Versand", () -> shipping.step(now, rules, flowPilot));
       phase("Maschinen", () -> machines.step(STEP_MS));
       phase("FlowPilot", () -> flowPilot.step(STEP_MS));
+      phase("Szenarien", () -> scenarios.step(now));
       for (int i = 0; i < extraPhases.size(); i++) phase(extraPhaseNames.get(i), extraPhases.get(i));
       phase("Zustellung", bus::retryFailed);
     }
@@ -146,9 +149,24 @@ public final class Plant {
    */
   public void reset(long seed) {
     synchronized (bus) {
+      scenarios.reset();
       machines.reset(seed);
       orders = new OrderGenerator(new SeededRandom(seed).fork("orders"));
       applyRules(rules);
+    }
+  }
+
+  /** Starts scenario id (A to E) on the running plant; @return the run id. */
+  public String startScenario(String id) {
+    synchronized (bus) {
+      return scenarios.start(id, time.nowMs());
+    }
+  }
+
+  /** The scenarios and their last runs as JSON (PlantQueries "scenarios"). */
+  public String scenariosJson() {
+    synchronized (bus) {
+      return scenarios.json();
     }
   }
 
