@@ -1,4 +1,5 @@
 import type { NexusClient } from '../client';
+import type { EventFilter, EventPage } from '../eventFilter';
 import type { Answer, Command, NexusMessage, Query } from '../types';
 import type { WorkerRequest } from './engine';
 
@@ -72,6 +73,10 @@ export class BrowserClient implements NexusClient {
 
   query<T>(q: Query): Promise<Answer<T>> {
     return this.request({ kind: 'query', body: q }) as Promise<Answer<T>>;
+  }
+
+  events(f: EventFilter): Promise<EventPage> {
+    return this.request({ kind: 'events', filter: f }) as Promise<EventPage>;
   }
 
   async play() {

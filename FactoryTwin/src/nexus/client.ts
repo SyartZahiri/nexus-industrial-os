@@ -1,3 +1,4 @@
+import type { EventFilter, EventPage } from './eventFilter';
 import type { Answer, Command, NexusMessage, Query } from './types';
 
 /** The one way the user interface talks to the plant (Spec 14), in the browser or against the server. */
@@ -7,6 +8,8 @@ export interface NexusClient {
   connect(onMessage: (m: NexusMessage) => void): () => void;
   command(c: Command): Promise<Answer>;
   query<T>(q: Query): Promise<Answer<T>>;
+  /** One page of the run's events that match the filter, oldest first. */
+  events(f: EventFilter): Promise<EventPage>;
   play(): Promise<void>;
   pause(): Promise<void>;
   setSpeed(speed: number): Promise<void>;

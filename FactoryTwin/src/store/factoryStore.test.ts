@@ -13,6 +13,7 @@ function fakeClient(answer: Answer): { client: NexusClient; push: (m: NexusMessa
     },
     command: async () => answer,
     query: async () => ({ ok: true, result: {} }) as Answer<never>,
+    events: async () => ({ items: [], more: false, next: 0 }),
     play: async () => {},
     pause: async () => {},
     setSpeed: async () => {},

@@ -150,4 +150,9 @@ describe('ServerClient', () => {
       message: 'nein',
     });
   });
+  it('aPageWithoutMatchesStillMovesTheCursorOn', async () => {
+    const { client } = setup([event(1), event(2), event(3)]); // all order.created
+    const page = await client.events({ type: 'machine.', limit: 3 });
+    expect(page).toEqual({ items: [], more: true, next: 3 });
+  });
 });

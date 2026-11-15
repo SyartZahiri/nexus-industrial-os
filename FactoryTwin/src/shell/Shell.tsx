@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { EventsArea } from '../areas/events/EventsArea';
 import { OverviewArea } from '../areas/overview/OverviewArea';
 import { TwinArea } from '../areas/TwinArea';
 import { cx } from '../ui/primitives';
@@ -9,10 +10,12 @@ import { useRoute } from './route';
 import { SimBar } from './SimBar';
 
 /** The page of an area. Areas built in later tasks replace their line here. */
-function page(area: AreaId): ReactNode {
+function page(area: AreaId, param: string | null): ReactNode {
   switch (area) {
     case 'overview':
       return <OverviewArea />;
+    case 'events':
+      return <EventsArea filterId={param} />;
     case 'twin':
       return <TwinArea />;
     default:
@@ -25,7 +28,7 @@ function page(area: AreaId): ReactNode {
  * area below. FactoryTwin fills its space edge to edge; every other area scrolls inside a bounded column.
  */
 export function Shell() {
-  const { area } = useRoute();
+  const { area, param } = useRoute();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLElement | null>(null);
@@ -60,7 +63,7 @@ export function Shell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <SimBar title={areaById(area).label} onMenu={() => setMenuOpen(true)} />
         <main className={cx('min-h-0 flex-1', twin ? 'overflow-hidden' : 'scroll-thin overflow-y-auto')}>
-          {twin ? page(area) : <div className="mx-auto w-full max-w-[1600px]">{page(area)}</div>}
+          {twin ? page(area, param) : <div className="mx-auto w-full max-w-[1600px]">{page(area, param)}</div>}
         </main>
       </div>
     </div>

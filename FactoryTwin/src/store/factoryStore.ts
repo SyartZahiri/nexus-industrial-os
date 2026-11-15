@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { NexusClient } from '../nexus/client';
+import type { EventFilter, EventPage } from '../nexus/eventFilter';
 import type { Answer, Command, NexusEvent, Query, SimState } from '../nexus/types';
 import { toScene } from '../twin/sceneModel';
 import { Twin } from '../twin/twin';
@@ -143,6 +144,11 @@ function client(): NexusClient {
 /** Asks the plant; throws when no client is connected yet. */
 export function query<T>(q: Query): Promise<Answer<T>> {
   return client().query<T>(q);
+}
+
+/** One page of the run's events that match the filter, oldest first. */
+export function eventPage(f: EventFilter): Promise<EventPage> {
+  return client().events(f);
 }
 
 /** Sends a command; if the plant refuses it, its reason becomes the notice and the result is false. */

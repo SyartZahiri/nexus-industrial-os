@@ -46,4 +46,15 @@ describe('BrowserEngine', () => {
     }
     expect(first).toBe(1);
   });
+
+  it('answers an event query with the run’s events, filtered', () => {
+    const engine = new BrowserEngine(core, 7);
+    engine.handle({ id: 1, kind: 'speed', speed: 25 });
+    engine.handle({ id: 2, kind: 'play' });
+    for (let i = 0; i < 200; i++) engine.tick(50);
+    const { answer } = engine.handle({ id: 3, kind: 'events', filter: { type: 'order.' } });
+    const page = answer as { items: { type: string }[]; more: boolean };
+    expect(page.items.length).toBeGreaterThan(0);
+    expect(page.items.every((e) => e.type.startsWith('order.'))).toBe(true);
+  });
 });
