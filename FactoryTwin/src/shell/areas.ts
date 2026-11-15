@@ -34,7 +34,7 @@ export const AREAS: Area[] = [
     summary: 'Materialfluss, Transporte und die AGV-Flotte.' },
   { id: 'routemind', label: 'RouteMind', group: 'Systeme', hash: '#/routemind', comesWith: 'M4',
     summary: 'Auslieferung an Kunden: Touren, Fahrzeuge und Karte.' },
-  { id: 'machines', label: 'Machines', group: 'Betrieb', hash: '#/machines', comesWith: 'M2-C',
+  { id: 'machines', label: 'Machines', group: 'Betrieb', hash: '#/machines', comesWith: null,
     summary: 'Jede Maschine mit Zustand, Sensoren und Verlauf.' },
   { id: 'warehouse', label: 'Warehouse', group: 'Betrieb', hash: '#/warehouse', comesWith: 'M2-C',
     summary: 'Bestände, Reservierungen und Wareneingang.' },

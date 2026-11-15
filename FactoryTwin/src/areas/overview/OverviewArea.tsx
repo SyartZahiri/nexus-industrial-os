@@ -21,7 +21,6 @@ function Count({ label, value, tone }: { label: string; value: number; tone?: st
 export function OverviewArea() {
   useFactory((s) => s.scene); // re-render with every frame; the figures read the twin's latest frame
   const events = useFactory((s) => s.events);
-  const select = useFactory((s) => s.select);
   const kpis = useKpis(60);
   const f = overviewFigures(twin.latest, kpis, events);
 
@@ -42,10 +41,9 @@ export function OverviewArea() {
             {f.machines.map((m) => (
               <li key={m.id} className="border-b border-line">
                 <a
-                  href={hrefOf('twin')}
-                  onClick={() => select({ type: 'machine', id: m.id }, true)}
+                  href={hrefOf('machines', m.id)}
                   className="flex items-center justify-between gap-3 py-2 pr-4 hover:bg-white/[0.03]"
-                  title={`${m.id} in FactoryTwin zeigen`}
+                  title={`${m.id} in Machines zeigen`}
                 >
                   <span className="font-mono text-[13px] text-txt-1">{m.id}</span>
                   <StateTag kind="machine" status={m.status} />
