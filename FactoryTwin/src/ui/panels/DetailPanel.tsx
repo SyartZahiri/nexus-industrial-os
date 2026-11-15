@@ -2,10 +2,10 @@ import type { ReactNode } from 'react';
 import { send, sceneOf, twin, useFactory } from '../../store/factoryStore';
 import { FAULT_TYPES, PRODUCTS } from '../../twin/config';
 import type { SceneAgv, SceneConveyor, SceneMachine } from '../../twin/types';
-import { AGV_COLOR, AGV_LABEL, clock, nf, pct, STATUS_COLOR, STATUS_LABEL } from '../format';
+import { AGV_COLOR, AGV_LABEL, clock, nf, pct, STATE_HEX, STATUS_COLOR, STATUS_LABEL } from '../format';
 import { Button, Card, Icon, KV, Meter, SectionTitle, Slider, StatusDot, Toggle } from '../primitives';
 
-function Header({ title, subtitle, color, state }: { title: string; subtitle: string; color: string; state: string }) {
+function Header({ title, subtitle, color, state, onClose }: { title: string; subtitle: string; color: string; state: string; onClose?: () => void }) {
   const select = useFactory((s) => s.select);
   return (
     <div className="mb-3 flex items-start justify-between gap-2">
@@ -16,7 +16,7 @@ function Header({ title, subtitle, color, state }: { title: string; subtitle: st
           <StatusDot color={color} /> {state}
         </p>
       </div>
-      <Button variant="ghost" size="sm" onClick={() => select(null)} aria-label="Auswahl aufheben">
+      <Button variant="ghost" size="sm" onClick={() => (onClose ? onClose() : select(null))} aria-label="Auswahl aufheben">
         {Icon.close}
       </Button>
     </div>
@@ -27,13 +27,13 @@ function Commands({ children }: { children: ReactNode }) {
   return <div className="mt-3 flex flex-wrap gap-1.5">{children}</div>;
 }
 
-export function MachineDetails({ m }: { m: SceneMachine }) {
+export function MachineDetails({ m, onClose }: { m: SceneMachine; onClose?: () => void }) {
   const product = m.job ? sceneOf(useFactory.getState()).workpieces.get(m.job.wpId)?.product : undefined;
   const faults = FAULT_TYPES.filter((f) => f.kinds.includes(m.kind));
   const cmd = (command: string, extra: Record<string, unknown> = {}) => void send({ command, machineId: m.id, ...extra });
   return (
     <>
-      <Header title={`${m.id} · ${m.name}`} subtitle={m.model} color={STATUS_COLOR[m.status]} state={STATUS_LABEL[m.status]} />
+      <Header title={`${m.id} · ${m.name}`} subtitle={m.model} color={STATUS_COLOR[m.status]} state={STATUS_LABEL[m.status]} onClose={onClose} />
       <Card>
         <SectionTitle>Auftrag</SectionTitle>
         {m.job ? (
@@ -100,17 +100,17 @@ export function MachineDetails({ m }: { m: SceneMachine }) {
   );
 }
 
-export function AgvDetails({ a }: { a: SceneAgv }) {
+export function AgvDetails({ a, onClose }: { a: SceneAgv; onClose?: () => void }) {
   const transport = twin.latest?.transports.find((t) => t.id === a.transportId);
   const cmd = (command: string) => void send({ command, agvId: a.id });
   return (
     <>
-      <Header title={a.name} subtitle={a.id} color={AGV_COLOR[a.state]} state={AGV_LABEL[a.state]} />
+      <Header title={a.name} subtitle={a.id} color={AGV_COLOR[a.state]} state={AGV_LABEL[a.state]} onClose={onClose} />
       <Card>
         <SectionTitle>Fahrzeug</SectionTitle>
         <div className="mb-1 flex items-center gap-2">
-          <Meter value={a.battery / 100} color={a.battery < 25 ? '#ef4444' : '#22c55e'} />
-          <span className="font-mono text-[11px] text-txt-2 tnum">{nf(a.battery)} %</span>
+          <Meter value={a.battery / 100} color={a.battery < 25 ? STATE_HEX.fault : undefined} />
+          <span className="whitespace-nowrap font-mono text-[11px] text-txt-2 tnum">{nf(a.battery)} %</span>
         </div>
         <KV k="Geschwindigkeit" v={`${nf(a.speed, 2)} m/s`} />
         <KV k="Wegpunkte offen" v={a.route.length} />

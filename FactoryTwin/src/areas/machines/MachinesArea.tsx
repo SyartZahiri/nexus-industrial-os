@@ -56,9 +56,9 @@ export function MachinesArea({ id }: { id: string | null }) {
           empty="Noch keine Daten der Anlage."
         />
       </Section>
-      <Section title={machine ? machine.id : 'Auswahl'} className="col-span-12 xl:col-span-4">
+      <Section title="Auswahl" className="col-span-12 xl:col-span-4">
         {machine ? (
-          <MachineDetails m={machine} />
+          <MachineDetails m={machine} onClose={() => (window.location.hash = hrefOf('machines'))} />
         ) : (
           <p className="text-[13px] text-txt-3">Wähle eine Maschine, um Sensoren, Auftrag und Befehle zu sehen.</p>
         )}

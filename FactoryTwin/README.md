@@ -44,17 +44,17 @@ Die Navigation links (unter 1024 px ein Menü) führt zu elf Bereichen. Die Simu
 |---|---|---|
 | Betrieb | Overview | fertig: Durchsatz, OEE, Termintreue, Durchlaufzeit, Maschinenlage, offene und verspätete Aufträge, Meldungen |
 | Betrieb | FactoryTwin | fertig: 3D-Halle mit Anlagendetails und Ereignissen |
-| Betrieb | Machines | kommt mit M2-C |
-| Betrieb | Warehouse | kommt mit M2-C |
-| Systeme | SmartFactory | kommt mit M2-C |
-| Systeme | FlowPilot | kommt mit M2-C |
+| Betrieb | Machines | fertig: alle Maschinen mit Zustand, Sensoren und Verschleiss; je Maschine Auftrag und Befehle |
+| Betrieb | Warehouse | fertig: Bestand, Reservierung und Meldebestand je Lagerplatz, Wareneingang mit freiem Platz |
+| Systeme | SmartFactory | fertig: Aufträge mit Schritten, Priorität und Storno, Plan je Maschine (Gantt), neue Aufträge |
+| Systeme | FlowPilot | fertig: AGV-Flotte, offene Transporte, Wegenetz als Karte mit Sperren und Freigeben |
 | Systeme | RouteMind | kommt mit M4 |
-| Auswertung | Analytics | kommt mit M2-C |
+| Auswertung | Analytics | fertig: Durchsatz, Termintreue, Durchlaufzeit, OEE je Maschine, Zeit je Zustand, Verlauf über 1 h, 8 h oder 24 h |
 | Auswertung | Event Monitor | fertig: Filter nach Auftrag, Typ und Schweregrad, Live-Ansicht, ganze Geschichte seitenweise |
 | Auswertung | Scenario Lab | kommt mit M3 |
 | System | Settings | fertig: Regeln der Anlage, Tempo, Seed, Darstellung |
 
-Ein Bereich, der noch kommt, sagt, wofür er da ist und wo man das Gleiche heute schon sieht.
+Ein Bereich, der noch kommt, sagt, wofür er da ist und wo man das Gleiche heute schon sieht. Machines, SmartFactory und FlowPilot öffnen die Auswahl aus der Adresse (`#/machines/CNC-02`, `#/smartfactory/PO-0004`, `#/flowpilot/AGV-03`); eine unbekannte ID nennt das und zeigt die Liste.
 
 ## Bedienung
 
@@ -82,9 +82,11 @@ src/
   store/          Zustand-Store: Simulationszustand, Ereignisse, Auswahl, Kamera
   scene/          3D-Szene; liest pro Bild aus dem Twin, ohne React-Re-Render
   shell/          Bereiche, Hash-Routing, Navigation, Simulationsleiste, Platzhalter
-  areas/          die fertigen Bereiche: TwinArea, overview/, events/, settings/
-  ui/             Designsystem (kit/: Tabelle, Kennzahl, Zustandsmarke, Abschnitt, Feld), Zustandsfarben, Detailansicht
+  areas/          die fertigen Bereiche: TwinArea, overview/, machines/, warehouse/, smartfactory/, flowpilot/, analytics/, events/, settings/
+  ui/             Designsystem (kit/: Tabelle, Kennzahl, Zustandsmarke, Abschnitt, Feld; kit/charts/: Balken, Zustandsbalken, Säulen), Zustandsfarben, Detailansicht
 ```
+
+Was sich laufend ändert, kommt mit jedem Frame. Stammdaten, Plan, Auftragsdetails, Wegenetz und Kennzahlen fragt die Oberfläche beim Kern ab (`products`, `schedule`, `order`, `warehouse`, `network`, `kpis`, `kpiSeries`), in beiden Betriebsarten mit derselben Antwort.
 
 Die Oberfläche enthält keine Geschäftsregeln. Jeder Befehl geht als JSON an den Java-Kern und wird dort geprüft; lehnt die Anlage ab, zeigt die Meldungszeile unter der Simulationsleiste den Grund.
 

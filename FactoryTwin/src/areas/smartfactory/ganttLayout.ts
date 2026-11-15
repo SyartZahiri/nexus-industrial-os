@@ -7,6 +7,8 @@ export interface GanttBar {
   key: string;
   orderId: string;
   seq: number;
+  startMs: number;
+  endMs: number;
   left: number;
   width: number;
   setupShare: number;
@@ -33,6 +35,8 @@ export function ganttLayout(s: Schedule, nowMs: number, machineIds: string[]) {
           key: `${o.orderId}/${o.seq}`,
           orderId: o.orderId,
           seq: o.seq,
+          startMs: o.startMs,
+          endMs: o.endMs,
           left: at(o.startMs),
           width: Math.max(MIN_WIDTH, at(o.endMs) - at(o.startMs)),
           setupShare: length > 0 ? Math.min(1, o.setupMs / length) : 0,

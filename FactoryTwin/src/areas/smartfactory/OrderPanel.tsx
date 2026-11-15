@@ -4,8 +4,8 @@ import { usePlantQuery } from '../../nexus/usePlantQuery';
 import { hrefOf } from '../../shell/route';
 import { send } from '../../store/factoryStore';
 import { PROCESS_LABEL } from '../../twin/config';
-import { clock } from '../../ui/format';
-import { DataTable, type Column } from '../../ui/kit';
+import { clock, OP_STATE, ORDER_STATE } from '../../ui/format';
+import { CodeTag, DataTable, type Column } from '../../ui/kit';
 import { Button, Segmented } from '../../ui/primitives';
 
 const PRIORITIES: { value: Priority; label: string }[] = [
@@ -21,7 +21,7 @@ const opColumns: Column<Op>[] = [
   { key: 'seq', label: 'Schritt', value: (o) => o.seq, mono: true, width: '64px' },
   { key: 'process', label: 'Prozess', value: (o) => PROCESS_LABEL[o.process as keyof typeof PROCESS_LABEL] ?? o.process },
   { key: 'machine', label: 'Maschine', value: (o) => o.machineId, mono: true, render: (o) => o.machineId ?? '–' },
-  { key: 'status', label: 'Stand', value: (o) => o.status, mono: true },
+  { key: 'status', label: 'Stand', value: (o) => o.status, render: (o) => <CodeTag map={OP_STATE} code={o.status} /> },
   { key: 'plan', label: 'Geplant', value: (o) => o.plannedStartMs, render: (o) => `${time(o.plannedStartMs)}–${time(o.plannedEndMs)}`, mono: true },
   { key: 'good', label: 'Gut', value: (o) => o.good, align: 'right', mono: true },
 ];
@@ -53,7 +53,9 @@ export function OrderPanel({ orderId }: { orderId: string }) {
         <dt className="text-txt-3">Menge</dt>
         <dd className="font-mono text-txt-1">{o.quantity}</dd>
         <dt className="text-txt-3">Stand</dt>
-        <dd className="font-mono text-txt-1">{o.status}</dd>
+        <dd>
+          <CodeTag map={ORDER_STATE} code={o.status} />
+        </dd>
         <dt className="text-txt-3">Termin</dt>
         <dd className="font-mono text-txt-1">{time(o.dueAtMs)}</dd>
         <dt className="text-txt-3">Gut / Ausschuss</dt>

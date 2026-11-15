@@ -141,3 +141,45 @@ export const nf = (v: number, digits = 0) =>
   v.toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
 export const pct = (v: number, digits = 0) => `${nf(v * 100, digits)} %`;
+
+/** A code of the core shown as a state: a word and one of the state colours. */
+export type StateMap = Record<string, { text: string; color: string }>;
+
+export const ORDER_STATE: StateMap = {
+  CREATED: { text: 'Angelegt', color: STATE_HEX.idle },
+  MATERIAL_PENDING: { text: 'Wartet auf Material', color: STATE_HEX.wait },
+  SHORTAGE: { text: 'Fehlmenge', color: STATE_HEX.fault },
+  RELEASED: { text: 'Freigegeben', color: STATE_HEX.setup },
+  IN_PROGRESS: { text: 'In Arbeit', color: STATE_HEX.run },
+  COMPLETED: { text: 'Fertig', color: STATE_HEX.idle },
+  CANCELLED: { text: 'Storniert', color: STATE_HEX.unknown },
+};
+
+export const OP_STATE: StateMap = {
+  PLANNED: { text: 'Geplant', color: STATE_HEX.idle },
+  WAITING_MATERIAL: { text: 'Wartet auf Material', color: STATE_HEX.wait },
+  READY: { text: 'Bereit', color: STATE_HEX.setup },
+  RUNNING: { text: 'Läuft', color: STATE_HEX.run },
+  DONE: { text: 'Fertig', color: STATE_HEX.idle },
+  CANCELLED: { text: 'Storniert', color: STATE_HEX.unknown },
+};
+
+/** Moving and handling are one state, as with the AGVs. */
+export const TRANSPORT_STATE: StateMap = {
+  CREATED: { text: 'Offen', color: STATE_HEX.wait },
+  ASSIGNED: { text: 'Zugewiesen', color: STATE_HEX.setup },
+  TO_PICKUP: { text: 'Fährt zur Abholung', color: STATE_HEX.setup },
+  LOADING: { text: 'Lädt auf', color: STATE_HEX.setup },
+  IN_TRANSIT: { text: 'Unterwegs', color: STATE_HEX.setup },
+  UNLOADING: { text: 'Lädt ab', color: STATE_HEX.setup },
+  DELIVERED: { text: 'Geliefert', color: STATE_HEX.idle },
+  FAILED: { text: 'Ausgefallen', color: STATE_HEX.fault },
+  CANCELLED: { text: 'Storniert', color: STATE_HEX.unknown },
+};
+
+export const PRIORITY_LABEL: Record<'NORMAL' | 'HOCH' | 'EILIG', string> = { NORMAL: 'Normal', HOCH: 'Hoch', EILIG: 'Eilig' };
+
+/** A code the map does not know (a newer core) stays readable as itself. */
+export function stateOf(map: StateMap, code: string): { text: string; color: string } {
+  return map[code] ?? { text: code, color: STATE_HEX.unknown };
+}

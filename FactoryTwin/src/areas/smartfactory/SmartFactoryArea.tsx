@@ -3,8 +3,8 @@ import type { FrameOrder, ProductInfo, Schedule } from '../../nexus/types';
 import { usePlantQuery } from '../../nexus/usePlantQuery';
 import { hrefOf } from '../../shell/route';
 import { sceneOf, send, twin, useFactory } from '../../store/factoryStore';
-import { clock, STATE_HEX } from '../../ui/format';
-import { control, DataTable, Field, Section, type Column } from '../../ui/kit';
+import { clock, ORDER_STATE, PRIORITY_LABEL, STATE_HEX } from '../../ui/format';
+import { CodeTag, control, DataTable, Field, Section, type Column } from '../../ui/kit';
 import { Button, Segmented } from '../../ui/primitives';
 import { Gantt } from './Gantt';
 import { OrderPanel } from './OrderPanel';
@@ -33,8 +33,8 @@ function orderColumns(nowMs: number): Column<FrameOrder>[] {
     },
     { key: 'product', label: 'Produkt', value: (o) => o.productId, mono: true },
     { key: 'qty', label: 'Menge', value: (o) => o.quantity, align: 'right', mono: true },
-    { key: 'prio', label: 'Priorität', value: (o) => o.priority },
-    { key: 'status', label: 'Stand', value: (o) => o.status, mono: true },
+    { key: 'prio', label: 'Priorität', value: (o) => o.priority, render: (o) => PRIORITY_LABEL[o.priority as keyof typeof PRIORITY_LABEL] ?? o.priority },
+    { key: 'status', label: 'Stand', value: (o) => o.status, render: (o) => <CodeTag map={ORDER_STATE} code={o.status} /> },
     {
       key: 'steps',
       label: 'Schritte',

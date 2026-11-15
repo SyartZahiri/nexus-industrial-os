@@ -35,7 +35,7 @@ function ResetButton({ seed }: { seed: number }) {
       </span>
     );
   return (
-    <Button variant="ghost" onClick={() => setAsking(true)} title={`Zurücksetzen (Seed ${seed})`} aria-label="Simulation zurücksetzen">
+    <Button variant="ghost" onClick={() => setAsking(true)} title={`Zurücksetzen (Seed ${seed})`} aria-label="Reset: Simulation zurücksetzen">
       {Icon.reset}
       <span className="hidden xl:inline">Reset</span>
     </Button>

@@ -60,12 +60,18 @@ export function AnalyticsArea() {
       </Section>
 
       <Section title="Zeit je Zustand">
+        <div className="grid grid-cols-[80px_minmax(0,1fr)_64px] gap-3 pb-1 text-[11px] uppercase tracking-[0.08em] text-txt-3" aria-hidden="true">
+          <span>Maschine</span>
+          <span>Anteil je Zustand an der erfassten Zeit</span>
+          <span className="text-right">Auslastung</span>
+        </div>
         <ul className="flex flex-col">
           {machines.map(([id, m]) => (
             <li key={id} className="grid grid-cols-[80px_minmax(0,1fr)_64px] items-center gap-3 border-b border-line py-2 last:border-b-0">
               <span className="font-mono text-[12px] text-txt-1">{id}</span>
               <StatusStack timeInStatusMs={m.timeInStatusMs} label={`Zeit je Zustand ${id}`} />
-              <span className="text-right font-mono text-[12px] text-txt-2 tnum" title="Auslastung">
+              <span className="text-right font-mono text-[12px] text-txt-2 tnum">
+                <span className="sr-only">Auslastung </span>
                 {pct(m.utilization)}
               </span>
             </li>

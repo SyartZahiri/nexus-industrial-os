@@ -47,7 +47,8 @@ export function SectionTitle({ children, right }: { children: ReactNode; right?:
 }
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx('rounded-lg border border-line bg-ink-2/80 p-3', className)}>{children}</div>;
+  // a group of the detail panel: a hairline above, no box (Spec 14: no cards inside sections)
+  return <div className={cx('border-t border-line pt-3', className)}>{children}</div>;
 }
 
 export function StatusDot({ color, pulse = false, size = 8 }: { color: string; pulse?: boolean; size?: number }) {
@@ -181,10 +182,10 @@ export function Slider({
 }
 
 /** Horizontal meter; fill colour carries the state, track is a dim step of the same hue. */
-export function Meter({ value, color = '#3987e5', height = 4 }: { value: number; color?: string; height?: number }) {
+export function Meter({ value, color = 'var(--color-txt-2)', height = 4 }: { value: number; color?: string; height?: number }) {
   const v = Math.max(0, Math.min(1, value));
   return (
-    <div className="w-full overflow-hidden rounded-full" style={{ height, background: `${color}22` }} aria-hidden="true">
+    <div className="w-full overflow-hidden rounded-full" style={{ height, background: 'var(--color-ink-3)' }} aria-hidden="true">
       {/* transform instead of width: compositor-only, no layout per update */}
       <div
         className="h-full w-full rounded-full transition-transform duration-300 ease-[var(--ease-out)]"

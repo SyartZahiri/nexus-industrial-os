@@ -4,8 +4,8 @@ import { usePlantQuery } from '../../nexus/usePlantQuery';
 import { hrefOf } from '../../shell/route';
 import { sceneOf, send, twin, useFactory } from '../../store/factoryStore';
 import type { SceneAgv } from '../../twin/types';
-import { nf } from '../../ui/format';
-import { control, DataTable, Field, Section, StateTag, type Column } from '../../ui/kit';
+import { nf, TRANSPORT_STATE } from '../../ui/format';
+import { CodeTag, control, DataTable, Field, Section, StateTag, type Column } from '../../ui/kit';
 import { AgvDetails } from '../../ui/panels/DetailPanel';
 import { Button } from '../../ui/primitives';
 import { NetworkMap } from './NetworkMap';
@@ -22,7 +22,7 @@ const agvColumns: Column<SceneAgv>[] = [
 const transportColumns: Column<FrameTransport>[] = [
   { key: 'id', label: 'Transport', value: (t) => t.id, mono: true, width: '112px' },
   { key: 'kind', label: 'Art', value: (t) => t.kind, mono: true, width: '88px' },
-  { key: 'status', label: 'Stand', value: (t) => t.status, mono: true },
+  { key: 'status', label: 'Stand', value: (t) => t.status, render: (t) => <CodeTag map={TRANSPORT_STATE} code={t.status} /> },
   { key: 'agv', label: 'AGV', value: (t) => t.agvId, render: (t) => t.agvId ?? '–', mono: true },
   { key: 'route', label: 'Von → Nach', value: (t) => `${t.from} → ${t.to}`, mono: true },
   {
@@ -69,8 +69,8 @@ export function FlowPilotArea({ agvId }: { agvId: string | null }) {
           empty="Noch keine Daten der Anlage."
         />
       </Section>
-      <Section title={agv ? agv.id : 'Auswahl'} className="col-span-12 xl:col-span-4">
-        {agv ? <AgvDetails a={agv} /> : <p className="text-[13px] text-txt-3">Wähle ein AGV für Akku, Auftrag und Befehle.</p>}
+      <Section title="Auswahl" className="col-span-12 xl:col-span-4">
+        {agv ? <AgvDetails a={agv} onClose={() => (window.location.hash = hrefOf('flowpilot'))} /> : <p className="text-[13px] text-txt-3">Wähle ein AGV für Akku, Auftrag und Befehle.</p>}
       </Section>
       <Section title="Wegenetz" className="col-span-12 xl:col-span-8">
         {network ? (

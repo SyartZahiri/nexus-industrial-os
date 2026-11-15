@@ -29,10 +29,10 @@ export function Gantt({ schedule, nowMs, machineIds }: { schedule: Schedule; now
                     outline: b.late ? `1px solid ${STATE_HEX.wait}` : undefined,
                     outlineOffset: -1,
                   }}
-                  title={`${b.orderId}, Schritt ${b.seq}${b.late ? ', verspätet' : ''}`}
-                  aria-label={`${b.orderId}, Schritt ${b.seq}${b.late ? ', verspätet' : ''}`}
+                  title={`${b.orderId}, Schritt ${b.seq}, ${lane.machineId} ${clock(b.startMs / 1000, false)}–${clock(b.endMs / 1000, false)}${b.setupShare > 0 ? ', mit Rüsten' : ''}${b.late ? ', verspätet' : ''}`}
+                  aria-label={`${b.orderId}, Schritt ${b.seq}, ${lane.machineId} ${clock(b.startMs / 1000, false)} bis ${clock(b.endMs / 1000, false)}${b.setupShare > 0 ? ', mit Rüsten' : ''}${b.late ? ', verspätet' : ''}`}
                 >
-                  <span className="h-full bg-line-2" style={{ width: `${b.setupShare * 100}%` }} aria-hidden="true" />
+                  <span className="h-full" style={{ width: `${b.setupShare * 100}%`, background: STATE_HEX.setup }} aria-hidden="true" />
                 </a>
               ))}
             </div>
