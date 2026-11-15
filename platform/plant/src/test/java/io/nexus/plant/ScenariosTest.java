@@ -95,4 +95,33 @@ class ScenariosTest {
     assertThat(ofType(p, EventTypes.SCENARIO_FINISHED)).isEmpty();
     assertThat(start(p, "E")).containsEntry("ok", true); // nothing blocks a new run
   }
+
+  @Test
+  void aMachineFailureMovesTheStepToAnotherMachine() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    p.advance(5 * MIN);
+    assertThat(start(p, "A")).containsEntry("ok", true);
+    var run = untilDone(p, 30 * MIN);
+    assertThat(run).containsEntry("state", "PASSED");
+    assertThat(texts(run)).last().asString().contains("umgeplant");
+  }
+
+  @Test
+  void anAgvFailureHandsTheLoadToAnotherAgv() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    p.advance(5 * MIN);
+    assertThat(start(p, "B")).containsEntry("ok", true);
+    var run = untilDone(p, 30 * MIN);
+    assertThat(run).containsEntry("state", "PASSED");
+    assertThat(texts(run)).anyMatch(t -> t.contains("Störung NAV"));
+  }
+
+  @Test
+  void aScenarioThatCannotTriggerFailsWithItsReason() {
+    Plant p = Plant.inMemory(7, Scenario1h.rules()); // no automatic orders: no CNC will ever run
+    assertThat(start(p, "A")).containsEntry("ok", true);
+    var run = untilDone(p, 31 * MIN);
+    assertThat(run).containsEntry("state", "FAILED");
+    assertThat(texts(run)).last().asString().contains("Keine CNC");
+  }
 }

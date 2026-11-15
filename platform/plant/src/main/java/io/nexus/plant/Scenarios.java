@@ -1,5 +1,6 @@
 package io.nexus.plant;
 
+import io.nexus.contracts.Domain.MachineKind;
 import io.nexus.contracts.Domain.Priority;
 import io.nexus.contracts.Domain.Severity;
 import io.nexus.contracts.DomainException;
@@ -7,11 +8,16 @@ import io.nexus.contracts.event.EventBus;
 import io.nexus.contracts.event.EventTypes;
 import io.nexus.contracts.event.Payloads;
 import io.nexus.contracts.json.JsonWriter;
+import io.nexus.contracts.state.MachineStatus;
 import io.nexus.contracts.state.OrderStatus;
+import io.nexus.contracts.state.TransportStatus;
 import io.nexus.flowpilot.FlowPilot;
+import io.nexus.flowpilot.store.TransportOrder;
 import io.nexus.smartfactory.SmartFactory;
 import io.nexus.smartfactory.master.SmartFactoryMasterData;
 import io.nexus.smartfactory.orders.NewOrder;
+import io.nexus.smartfactory.planning.Plan;
+import io.nexus.smartfactory.store.MachineRecord;
 import io.nexus.smartfactory.store.Operation;
 import java.util.ArrayList;
 import java.util.List;
@@ -67,6 +73,8 @@ final class Scenarios {
     for (Definition d : DEFINITIONS) if (d.id().equals(scenarioId)) def = d;
     if (def == null) throw DomainException.notFound("Szenario", scenarioId);
     Run run = switch (def.id()) {
+      case "A" -> new MachineFailure();
+      case "B" -> new AgvFailure();
       case "E" -> new FullRun();
       default -> throw DomainException.notFound("Szenario", scenarioId);
     };
@@ -160,6 +168,120 @@ final class Scenarios {
     abstract void check(long now);
 
     abstract String timeoutReason();
+  }
+
+  /**
+   * A: a fault on a CNC that is producing and has further operations planned. The running batch stays in the machine
+   * (its parts are inside); SmartFactory moves the waiting operations to machines with the same capability (Spec 10).
+   * Passes when at least one of them is assigned to another machine.
+   */
+  final class MachineFailure extends Run {
+    private String machineId;
+    private final List<String> waiting = new ArrayList<>(); // "orderId/seq" planned on the machine before the fault
+
+    @Override
+    void begin(long now) {
+      note(this, now, "Wartet auf eine CNC, die fertigt und weitere Arbeitsgänge eingeplant hat");
+    }
+
+    @Override
+    void check(long now) {
+      if (machineId == null) {
+        trigger(now);
+        return;
+      }
+      int moved = 0;
+      String to = null;
+      for (String key : waiting) {
+        int slash = key.lastIndexOf('/');
+        String order = key.substring(0, slash);
+        int seq = Integer.parseInt(key.substring(slash + 1));
+        for (Operation op : sf.operations(order)) {
+          if (op.seq() == seq && op.machineId() != null && !op.machineId().equals(machineId)) {
+            moved++;
+            to = op.machineId();
+          }
+        }
+      }
+      if (moved > 0) {
+        finish(this, now, true, moved + " von " + waiting.size() + " Arbeitsgängen umgeplant von " + machineId + ", zuletzt auf " + to);
+      }
+    }
+
+    private void trigger(long now) {
+      for (MachineRecord m : sf.machines()) {
+        if (m.status() != MachineStatus.RUNNING || SmartFactoryMasterData.machine(m.id()).kind() != MachineKind.CNC) continue;
+        Operation running = sf.runningOn(m.id());
+        if (running == null) continue;
+        List<String> planned = new ArrayList<>();
+        for (Plan.PlannedOp op : sf.plan().ops()) {
+          boolean isRunning = op.orderId().equals(running.orderId()) && op.seq() == running.seq();
+          if (op.machineId().equals(m.id()) && !isRunning) planned.add(op.orderId() + "/" + op.seq());
+        }
+        if (planned.isEmpty()) continue;
+        machineId = m.id();
+        waiting.addAll(planned);
+        sf.injectFault(machineId, "SERVO");
+        String first = planned.get(0).substring(0, planned.get(0).lastIndexOf('/'));
+        started(this, now, first, "Störung SERVO an " + machineId + ", " + planned.size()
+            + " Arbeitsgänge dort eingeplant, das laufende Los von " + running.orderId() + " bleibt in der Maschine");
+        return;
+      }
+    }
+
+    @Override
+    String timeoutReason() {
+      return machineId == null ? "Keine CNC fertigte mit weiteren eingeplanten Arbeitsgängen; läuft die Simulation mit Aufträgen?"
+          : "Kein Arbeitsgang verliess " + machineId;
+    }
+  }
+
+  /** B: a fault on an AGV carrying a load; passes when another AGV takes the failed transport over. */
+  final class AgvFailure extends Run {
+    private String agvId;
+    private String transportId;
+    private boolean failedSeen;
+
+    @Override
+    void begin(long now) {
+      note(this, now, "Wartet auf ein beladenes AGV");
+    }
+
+    @Override
+    void check(long now) {
+      List<TransportOrder> open = fp.openTransports();
+      if (agvId == null) {
+        for (TransportOrder t : open) {
+          if (t.status() != TransportStatus.IN_TRANSIT || t.agvId() == null) continue;
+          agvId = t.agvId();
+          transportId = t.id();
+          fp.injectFault(agvId, "NAV");
+          started(this, now, t.orderId(), "Störung NAV an " + agvId + ", beladen mit Transport " + transportId);
+          return;
+        }
+        return;
+      }
+      TransportOrder t = null;
+      for (TransportOrder x : open) if (x.id().equals(transportId)) t = x;
+      if (t == null) {
+        finish(this, now, failedSeen, failedSeen ? "Transport " + transportId + " zugestellt"
+            : "Transport " + transportId + " wurde vor dem Ausfall zugestellt");
+        return;
+      }
+      if (t.status() == TransportStatus.FAILED && !failedSeen) {
+        failedSeen = true;
+        note(this, now, "Transport " + transportId + " ausgefallen, wartet auf ein Ersatz-AGV");
+      }
+      if (t.agvId() != null && !t.agvId().equals(agvId)) {
+        finish(this, now, true, "Ersatz-AGV " + t.agvId() + " übernimmt Transport " + transportId);
+      }
+    }
+
+    @Override
+    String timeoutReason() {
+      return agvId == null ? "Kein AGV fuhr beladen; läuft die Simulation mit Aufträgen?"
+          : "Transport " + transportId + " fand kein Ersatz-AGV";
+    }
   }
 
   /** E: a new order, followed from release through every step to the putaway of the finished goods. */
