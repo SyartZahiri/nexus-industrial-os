@@ -27,7 +27,7 @@ function Commands({ children }: { children: ReactNode }) {
   return <div className="mt-3 flex flex-wrap gap-1.5">{children}</div>;
 }
 
-function MachineDetails({ m }: { m: SceneMachine }) {
+export function MachineDetails({ m }: { m: SceneMachine }) {
   const product = m.job ? sceneOf(useFactory.getState()).workpieces.get(m.job.wpId)?.product : undefined;
   const faults = FAULT_TYPES.filter((f) => f.kinds.includes(m.kind));
   const cmd = (command: string, extra: Record<string, unknown> = {}) => void send({ command, machineId: m.id, ...extra });
@@ -100,7 +100,7 @@ function MachineDetails({ m }: { m: SceneMachine }) {
   );
 }
 
-function AgvDetails({ a }: { a: SceneAgv }) {
+export function AgvDetails({ a }: { a: SceneAgv }) {
   const transport = twin.latest?.transports.find((t) => t.id === a.transportId);
   const cmd = (command: string) => void send({ command, agvId: a.id });
   return (
