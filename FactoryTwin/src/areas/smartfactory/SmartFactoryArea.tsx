@@ -134,7 +134,8 @@ export function SmartFactoryArea({ orderId }: { orderId: string | null }) {
       </Section>
       <Section title={orderId ?? 'Auftrag'} className="col-span-12 xl:col-span-4">
         {orderId ? (
-          <OrderPanel orderId={orderId} />
+          // keyed: another order is a new panel, so a pending "Stornieren?" never moves to it
+          <OrderPanel key={orderId} orderId={orderId} />
         ) : (
           <p className="text-[13px] text-txt-3">Wähle einen Auftrag, um Schritte, Priorität und Storno zu sehen.</p>
         )}

@@ -5,13 +5,13 @@ import { hrefOf } from '../../shell/route';
 import { clock, duration, nf, pct } from '../../ui/format';
 import { BarList, Columns, Section, Stat, StatusStack } from '../../ui/kit';
 import { Segmented } from '../../ui/primitives';
-import { SLOTS, WINDOWS, seriesSlots } from './series';
+import { SERIES_EVERY_MS, SLOTS, WINDOWS, seriesSlots } from './series';
 
 /** Figures from the core's events and state intervals (Spec 10); the interface only formats and draws them. */
 export function AnalyticsArea() {
   const [minutes, setMinutes] = useState(60);
   const { data: k } = usePlantQuery<Kpis>({ query: 'kpis', windowMinutes: minutes }, 2_000);
-  const { data: series } = usePlantQuery<KpiBucket[]>({ query: 'kpiSeries', bucketMinutes: minutes / SLOTS, buckets: SLOTS }, 5_000);
+  const { data: series } = usePlantQuery<KpiBucket[]>({ query: 'kpiSeries', bucketMinutes: minutes / SLOTS, buckets: SLOTS }, SERIES_EVERY_MS);
   const flow = k ? k.throughputPerHour > 0 : false;
   const machines = k ? Object.entries(k.machines) : [];
   const labels = Array.from({ length: SLOTS }, (_, i) => {

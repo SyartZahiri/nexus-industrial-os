@@ -1,4 +1,9 @@
-import type { Answer } from './types';
+import type { Answer, Query } from './types';
+
+/** The key of a query within a run: after a restart the same question is a new one, old answers do not count. */
+export function queryKey(q: Query, run: number): string {
+  return `${run}|${JSON.stringify(q)}`;
+}
 
 /** The last answer and the query it belongs to, so a new query never shows the answer to an old one. */
 export interface QueryState<T> {

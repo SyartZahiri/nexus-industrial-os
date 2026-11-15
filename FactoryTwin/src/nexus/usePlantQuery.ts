@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { query, useFactory } from '../store/factoryStore';
-import { answered, shown, type QueryState } from './queryState';
+import { answered, queryKey, shown, type QueryState } from './queryState';
 import type { Query } from './types';
 
 const RETRY_MS = 2_000;
@@ -11,8 +11,9 @@ const RETRY_MS = 2_000;
  * error. Another query (another order in the link) shows nothing until it is answered itself.
  */
 export function usePlantQuery<T>(q: Query, everyMs = 0): { data: T | null; error: string | null; reload: () => void } {
-  const key = JSON.stringify(q);
+  const body = JSON.stringify(q);
   const run = useFactory((s) => s.run);
+  const key = queryKey(q, run);
   const [nonce, setNonce] = useState(0);
   const [state, setState] = useState<QueryState<T>>({ key: '', data: null, error: null });
   useEffect(() => {
@@ -20,7 +21,7 @@ export function usePlantQuery<T>(q: Query, everyMs = 0): { data: T | null; error
     let timer: ReturnType<typeof setInterval> | undefined;
     const ask = async () => {
       try {
-        const a = await query<T>(JSON.parse(key) as Query);
+        const a = await query<T>(JSON.parse(body) as Query);
         if (!alive) return;
         setState((s) => answered(s, key, a));
         if (a.ok && everyMs <= 0) clearInterval(timer);
@@ -34,6 +35,6 @@ export function usePlantQuery<T>(q: Query, everyMs = 0): { data: T | null; error
       alive = false;
       clearInterval(timer);
     };
-  }, [key, everyMs, run, nonce]);
+  }, [key, body, everyMs, nonce]);
   return { ...shown(state, key), reload: () => setNonce((n) => n + 1) };
 }
