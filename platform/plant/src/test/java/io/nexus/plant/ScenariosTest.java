@@ -75,6 +75,7 @@ class ScenariosTest {
     var second = start(p, "D");
     assertThat(second).containsEntry("ok", false).containsEntry("status", 409L);
     assertThat((String) second.get("message")).contains("läuft noch");
+    assertThat(start(p, "Z")).containsEntry("status", 404L); // unknown stays unknown while another runs
     assertThat(runs(p)).hasSize(1);
   }
 

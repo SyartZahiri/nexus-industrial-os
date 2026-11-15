@@ -125,7 +125,7 @@ class SimController {
   }
 
   /** The core's answer unchanged; its status field, if any, becomes the HTTP status. */
-  private static ResponseEntity<String> answer(String json) {
+  static ResponseEntity<String> answer(String json) {
     Object status = ((Map<?, ?>) JsonReader.parse(json)).get("status");
     return ResponseEntity.status(status instanceof Long s ? s.intValue() : 200)
         .contentType(MediaType.APPLICATION_JSON).body(json);

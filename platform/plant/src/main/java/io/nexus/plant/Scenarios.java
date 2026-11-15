@@ -69,13 +69,13 @@ final class Scenarios {
   }
 
   String start(String scenarioId, long now) {
+    Definition def = null;
+    for (Definition d : DEFINITIONS) if (d.id().equals(scenarioId)) def = d;
+    if (def == null) throw DomainException.notFound("Szenario", scenarioId); // unknown stays unknown, also while one runs
     Run active = active();
     if (active != null) {
       throw DomainException.conflict("Szenario " + active.def.id() + " (" + active.def.title() + ") läuft noch");
     }
-    Definition def = null;
-    for (Definition d : DEFINITIONS) if (d.id().equals(scenarioId)) def = d;
-    if (def == null) throw DomainException.notFound("Szenario", scenarioId);
     Run run = switch (def.id()) {
       case "A" -> new MachineFailure();
       case "B" -> new AgvFailure();
