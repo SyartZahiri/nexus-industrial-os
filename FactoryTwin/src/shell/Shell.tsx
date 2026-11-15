@@ -58,13 +58,13 @@ export function Shell() {
       {menuOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <button aria-label="Menü schliessen" className="absolute inset-0 bg-black/50" onClick={() => setMenuOpen(false)} />
-          <div ref={menuRef} role="dialog" aria-modal="true" aria-label="Bereiche" className="absolute inset-y-0 left-0 w-[264px] max-w-[85vw] border-r border-line bg-ink-1">
+          <div ref={menuRef} id="area-menu" role="dialog" aria-modal="true" aria-label="Bereiche" className="absolute inset-y-0 left-0 w-[264px] max-w-[85vw] border-r border-line bg-ink-1">
             <Nav current={area} onNavigate={() => setMenuOpen(false)} />
           </div>
         </div>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        <SimBar title={areaById(area).label} onMenu={() => setMenuOpen(true)} />
+        <SimBar title={areaById(area).label} onMenu={() => setMenuOpen(true)} menuOpen={menuOpen} />
         <main className={cx('min-h-0 flex-1', twin ? 'overflow-hidden' : 'scroll-thin overflow-y-auto')}>
           {twin ? page(area, param) : <div className="mx-auto w-full max-w-[1600px]">{page(area, param)}</div>}
         </main>

@@ -37,4 +37,8 @@ describe('route', () => {
     expect(hrefOf('events', 'PO 1/2')).toBe('#/events/PO%201%2F2');
     expect(parseHash('#/events/PO%201%2F2').param).toBe('PO 1/2');
   });
+
+  it('aTrailingSlashKeepsTheArea', () => {
+    expect(parseHash('#/events/')).toEqual({ area: 'events', param: null });
+  });
 });

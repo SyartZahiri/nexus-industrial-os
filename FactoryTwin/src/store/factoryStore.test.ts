@@ -81,4 +81,12 @@ describe('factoryStore', () => {
     expect(useFactory.getState().events).toEqual([]);
     expect(twin.latest).toBeNull();
   });
+
+  it('countsRunsSoViewsOfTheOldRunCanReload', () => {
+    const { client, push } = fakeClient({ ok: true, result: null });
+    startNexus(client);
+    const before = useFactory.getState().run;
+    push({ type: 'reset', seed: 3 });
+    expect(useFactory.getState().run).toBe(before + 1);
+  });
 });

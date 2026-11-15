@@ -33,6 +33,8 @@ interface FactoryStore {
   mode: 'browser' | 'server';
   connection: Connection;
   events: NexusEvent[];
+  /** Counts restarts, so views holding data of the old run (a page of events, the rules form) reload. */
+  run: number;
   /** The last reason the plant gave for refusing a command; shown until dismissed. */
   notice: string | null;
   selected: Selection | null;
@@ -64,6 +66,7 @@ export const useFactory = create<FactoryStore>((set, get) => ({
   mode: 'browser',
   connection: 'connecting',
   events: [],
+  run: 0,
   notice: null,
   selected: null,
   hovered: null,
@@ -117,7 +120,7 @@ export function startNexus(client: NexusClient): () => void {
     twin.apply(m, performance.now());
     switch (m.type) {
       case 'reset':
-        useFactory.setState({ events: [], scene: null });
+        useFactory.setState((s) => ({ events: [], scene: null, run: s.run + 1 }));
         break;
       case 'sim':
         useFactory.setState({ sim: { running: m.running, speed: m.speed, seed: m.seed } });

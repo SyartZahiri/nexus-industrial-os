@@ -12,6 +12,7 @@ function useShortcuts() {
       const t = e.target as HTMLElement;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (t?.closest('[role="dialog"]')) return; // the open menu owns its keys (Escape closes it)
       const st = useFactory.getState();
       const k = e.key.toLowerCase();
       if (e.key === ' ') {

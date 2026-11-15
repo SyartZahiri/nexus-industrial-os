@@ -70,7 +70,8 @@ function RulesPart() {
       setFailed(r === null);
     });
   };
-  useEffect(load, []);
+  const run = useFactory((s) => s.run);
+  useEffect(load, [run]); // after a restart the form shows what the new run really uses
 
   const aside =
     'Regeln gelten nach „Übernehmen“ für den laufenden Betrieb. Lehnt die Anlage einen Wert ab, steht der Grund oben in der Meldungszeile, und das Formular zeigt wieder die gültigen Werte.';

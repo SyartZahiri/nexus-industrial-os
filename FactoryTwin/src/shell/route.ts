@@ -8,7 +8,7 @@ export interface Route {
 
 /** "#/area" or "#/area/param"; anything else is the overview, so no link ever shows an empty page. */
 export function parseHash(hash: string): Route {
-  const m = /^#\/([a-z]+)(?:\/(.+))?$/.exec(hash);
+  const m = /^#\/([a-z]+)(?:\/(.*))?$/.exec(hash);
   const known = m !== null && AREAS.some((a) => a.id === m[1]);
   return known ? { area: m[1] as AreaId, param: decode(m[2]) } : { area: 'overview', param: null };
 }

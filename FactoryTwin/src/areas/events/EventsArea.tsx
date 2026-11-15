@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { matches, PAGE, type EventFilter } from '../../nexus/eventFilter';
 import type { NexusEvent } from '../../nexus/types';
 import { hrefOf } from '../../shell/route';
@@ -17,7 +17,10 @@ const TYPES: [string, string][] = [
   ['agv.', 'AGVs'],
   ['stock.', 'Bestand'],
   ['material.', 'Material'],
+  ['route.', 'Routen'],
   ['opcua.', 'OPC UA'],
+  ['scenario.', 'Szenarien'],
+  ['system.', 'System'],
   ['decision', 'Entscheidungen'],
 ];
 
@@ -72,6 +75,8 @@ export function EventsArea({ filterId }: { filterId: string | null }) {
   const [draft, setDraft] = useState(filterId ?? '');
   const [paged, setPaged] = useState<Paged>({ rows: [], more: false, next: 0, loading: false, error: null });
   const streamed = useFactory((s) => s.events);
+  const run = useFactory((s) => s.run);
+  const latest = useRef(0);
 
   useEffect(() => {
     setDraft(filterId ?? '');
@@ -84,9 +89,11 @@ export function EventsArea({ filterId }: { filterId: string | null }) {
   );
 
   const load = (after?: number) => {
+    const ask = ++latest.current; // only the newest request may fill the table (server answers can overtake)
     setPaged((p) => ({ ...p, loading: true, error: null }));
     eventPage({ ...filter, after })
       .then((page) =>
+        ask === latest.current &&
         setPaged((p) => ({
           rows: after === undefined ? page.items : [...p.rows, ...page.items],
           more: page.more,
@@ -96,13 +103,14 @@ export function EventsArea({ filterId }: { filterId: string | null }) {
         })),
       )
       .catch((e: unknown) =>
+        ask === latest.current &&
         setPaged((p) => ({ ...p, loading: false, error: e instanceof Error ? e.message : 'Ereignisse nicht lesbar' })),
       );
   };
 
   useEffect(() => {
-    if (!live) load(); // load reads the same filter
-  }, [live, filter]);
+    if (!live) load(); // load reads the same filter; a restart starts the pages over
+  }, [live, filter, run]);
 
   const liveRows = useMemo(
     () => (live ? streamed.filter((e) => matches(e, filter)).slice(-PAGE).reverse() : []),

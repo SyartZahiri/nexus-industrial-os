@@ -46,7 +46,7 @@ function ResetButton({ seed }: { seed: number }) {
  * The bar above every area: menu (below 1024 px), area title, simulation clock and control, error and warning
  * counts. The notice line below shows why the plant refused the last command.
  */
-export function SimBar({ title, onMenu }: { title: string; onMenu: () => void }) {
+export function SimBar({ title, onMenu, menuOpen }: { title: string; onMenu: () => void; menuOpen: boolean }) {
   const time = useFactory((s) => s.scene?.time ?? 0);
   const running = useFactory((s) => s.sim.running);
   const speed = useFactory((s) => s.sim.speed);
@@ -63,6 +63,8 @@ export function SimBar({ title, onMenu }: { title: string; onMenu: () => void })
           onClick={onMenu}
           className="rounded p-1.5 text-txt-2 hover:bg-white/5 hover:text-txt-1 lg:hidden"
           aria-label="Bereiche öffnen"
+          aria-expanded={menuOpen}
+          aria-controls="area-menu"
         >
           <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
             <path d="M2.5 4h11M2.5 8h11M2.5 12h11" strokeLinecap="round" />

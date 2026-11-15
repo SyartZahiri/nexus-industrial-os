@@ -65,11 +65,15 @@ export class BrowserEngine {
       case 'speed':
         this.loop.setSpeed(r.speed);
         return { answer: null, messages: [this.sim()] };
-      case 'reset':
+      case 'reset': {
+        // like Plant.reset on the server: a restart keeps the rules the user set
+        const rules = (JSON.parse(this.core.plantQuery('{"query":"rules"}')) as { result: object }).result;
         this.seed = r.seed ?? this.seed;
         this.core.plantStart(this.seed);
+        this.core.plantCommand(JSON.stringify({ command: 'setRules', ...rules }));
         this.sentEvents = 0;
         return { answer: null, messages: [{ type: 'reset', seed: this.seed }, this.sim(), this.frame()] };
+      }
     }
   }
 

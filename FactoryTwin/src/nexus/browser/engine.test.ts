@@ -57,4 +57,14 @@ describe('BrowserEngine', () => {
     expect(page.items.length).toBeGreaterThan(0);
     expect(page.items.every((e) => e.type.startsWith('order.'))).toBe(true);
   });
+
+  it('aResetKeepsTheRules', () => {
+    const engine = new BrowserEngine(core, 7);
+    engine.handle({ id: 1, kind: 'command', body: { command: 'setRules', dispatchRule: 'EDD', maxOpenOrders: 9 } });
+    engine.handle({ id: 2, kind: 'reset', seed: 9 });
+    const { answer } = engine.handle({ id: 3, kind: 'query', body: { query: 'rules' } });
+    const rules = (answer as { result: { dispatchRule: string; maxOpenOrders: number } }).result;
+    expect(rules.dispatchRule).toBe('EDD'); // like the server: a restart keeps the rules
+    expect(rules.maxOpenOrders).toBe(9);
+  });
 });
