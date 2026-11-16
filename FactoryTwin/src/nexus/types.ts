@@ -86,6 +86,116 @@ export interface FrameTransport {
   to: string;
 }
 
+export type DeliveryState = 'CREATED' | 'AWAITING_GOODS' | 'READY_TO_LOAD' | 'LOADED' | 'IN_TRANSIT' | 'DELIVERED' | 'FAILED' | 'CANCELLED';
+export type TourState = 'PLANNED' | 'LOADING' | 'EN_ROUTE' | 'COMPLETED' | 'REPLANNED' | 'INTERRUPTED';
+export type VehicleState = 'AVAILABLE' | 'LOADING' | 'EN_ROUTE' | 'RETURNING' | 'MAINTENANCE' | 'BROKEN_DOWN';
+
+/** A delivery vehicle: on the road from `from` to `to` (place ids), progress 0..1 along that leg. */
+export interface FrameTruck {
+  id: string;
+  name: string;
+  status: VehicleState;
+  tourId: string | null;
+  from: string;
+  to: string;
+  progress: number;
+}
+
+/** Goods of a delivery waiting at the loading zone or loaded on a vehicle that has not left. */
+export interface FrameDock {
+  deliveryId: string;
+  status: DeliveryState;
+  pallets: number;
+}
+
+export interface RmDelivery {
+  id: string;
+  orderId: string;
+  customerId: string;
+  customerName: string;
+  productId: string;
+  quantity: number;
+  storedQuantity: number;
+  weightKg: number;
+  pallets: number;
+  priority: 'NORMAL' | 'HOCH' | 'EILIG';
+  earliestMs: number;
+  latestMs: number;
+  status: DeliveryState;
+  tourId: string | null;
+  plannedArrivalMs: number | null;
+  deliveredAtMs: number | null;
+  failures: number;
+}
+
+export interface RmStop {
+  seq: number;
+  deliveryId: string;
+  customerId: string;
+  plannedArrivalMs: number;
+  arrivedAtMs: number | null;
+}
+
+export interface RmTour {
+  id: string;
+  planId: string;
+  vehicleId: string;
+  departAtMs: number;
+  status: TourState;
+  km: number;
+  cost: number;
+  startedAtMs: number | null;
+  endedAtMs: number | null;
+  stops: RmStop[];
+}
+
+export interface RmVehicle extends FrameTruck {
+  maxKg: number;
+  maxPallets: number;
+}
+
+export interface RmFigures {
+  km: number;
+  driveMinutes: number;
+  cost: number;
+  lateMinutes: number;
+  tours: number;
+}
+
+export interface RmPlan {
+  planId: string;
+  waveAtMs: number;
+  atMs: number;
+  trigger: string;
+  solver: string;
+  baseline: RmFigures;
+  optimized: RmFigures;
+  replaced: RmFigures | null;
+  unassigned: string[];
+  tourIds: string[];
+}
+
+export interface RmKpis {
+  activeTours: number;
+  utilization: number;
+  delivered: number;
+  onTime: number;
+  avgDelayMinutes: number;
+  failed: number;
+  open: number;
+  km: number;
+  cost: number;
+}
+
+export interface RouteMindData {
+  attribution: string;
+  deliveries: RmDelivery[];
+  tours: RmTour[];
+  vehicles: RmVehicle[];
+  plans: RmPlan[];
+  kpis: RmKpis;
+}
+
 export interface Frame {
   simTimeMs: number;
   machines: FrameMachine[];
@@ -94,6 +204,8 @@ export interface Frame {
   stock: FrameStock[];
   orders: FrameOrder[];
   transports: FrameTransport[];
+  trucks: FrameTruck[];
+  dock: FrameDock[];
 }
 
 export interface NexusEvent {

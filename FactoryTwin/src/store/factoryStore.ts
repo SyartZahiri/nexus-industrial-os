@@ -194,6 +194,8 @@ const EMPTY_SCENE: SceneState = toScene({
   stock: [],
   orders: [],
   transports: [],
+  trucks: [],
+  dock: [],
 });
 
 /**

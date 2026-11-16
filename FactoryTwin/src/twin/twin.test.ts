@@ -9,6 +9,8 @@ const frame = (t: number, x: number): Frame => ({
   stock: [],
   orders: [],
   transports: [],
+  trucks: [],
+  dock: [],
   agvs: [
     {
       id: 'AGV-01',
