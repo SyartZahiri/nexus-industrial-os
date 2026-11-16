@@ -4,9 +4,12 @@ import io.nexus.contracts.Domain.Priority;
 import io.nexus.contracts.Domain.TransportKind;
 import io.nexus.contracts.Place;
 import io.nexus.contracts.state.AgvStatus;
+import io.nexus.contracts.state.DeliveryStatus;
 import io.nexus.contracts.state.MachineStatus;
 import io.nexus.contracts.state.OrderStatus;
+import io.nexus.contracts.state.TourStatus;
 import io.nexus.contracts.state.TransportStatus;
+import io.nexus.contracts.state.VehicleStatus;
 import java.util.List;
 
 /** Payload of every event type. Which record belongs to which type is defined in {@link EventTypes}. */
@@ -58,4 +61,24 @@ public final class Payloads {
 
   public record MaterialRequested(String machineId, String orderId, String materialId, int quantity)
       implements Payload {}
+
+  public record DeliveryCreated(String deliveryId, String orderId, String customerId, int quantity, int weightKg,
+                                int pallets, long earliestMs, long latestMs) implements Payload {}
+
+  public record DeliveryStateChanged(String deliveryId, DeliveryStatus from, DeliveryStatus to, String tourId,
+                                     String reason) implements Payload {}
+
+  public record TourPlanned(String tourId, String vehicleId, String planId, long departAtMs, List<String> deliveryIds,
+                            double km, double cost) implements Payload {}
+
+  public record TourStateChanged(String tourId, TourStatus from, TourStatus to, String reason) implements Payload {}
+
+  public record VehicleStateChanged(String vehicleId, VehicleStatus from, VehicleStatus to) implements Payload {}
+
+  /** Key figures of one plan: distance, driving time, cost (CHF), lateness against the customers' windows. */
+  public record PlanFigures(double km, double driveMinutes, double cost, double lateMinutes, int tours) {}
+
+  /** One planning run: the simple start plan (nearest neighbour) against the optimised one, and what stayed open. */
+  public record DeliveryPlanComputed(String planId, String solver, long waveAtMs, String trigger, PlanFigures baseline,
+                                     PlanFigures optimized, List<String> unassigned) implements Payload {}
 }

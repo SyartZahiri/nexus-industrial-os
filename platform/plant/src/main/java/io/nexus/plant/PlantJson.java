@@ -109,6 +109,12 @@ public final class PlantJson {
     if (p instanceof Payloads.MachineStatusChanged) return "MachineStatusChanged";
     if (p instanceof Payloads.MachineFault) return "MachineFault";
     if (p instanceof Payloads.MaterialRequested) return "MaterialRequested";
+    if (p instanceof Payloads.DeliveryCreated) return "DeliveryCreated";
+    if (p instanceof Payloads.DeliveryStateChanged) return "DeliveryStateChanged";
+    if (p instanceof Payloads.TourPlanned) return "TourPlanned";
+    if (p instanceof Payloads.TourStateChanged) return "TourStateChanged";
+    if (p instanceof Payloads.VehicleStateChanged) return "VehicleStateChanged";
+    if (p instanceof Payloads.DeliveryPlanComputed) return "DeliveryPlanComputed";
     throw new IllegalStateException("Nutzlast ohne JSON-Form");
   }
 
@@ -170,10 +176,38 @@ public final class PlantJson {
     } else if (p instanceof Payloads.MaterialRequested x) {
       w.name("machineId").value(x.machineId()).name("orderId").value(x.orderId()).name("materialId").value(x.materialId())
           .name("quantity").value(x.quantity());
+    } else if (p instanceof Payloads.DeliveryCreated x) {
+      w.name("deliveryId").value(x.deliveryId()).name("orderId").value(x.orderId()).name("customerId").value(x.customerId())
+          .name("quantity").value(x.quantity()).name("weightKg").value(x.weightKg()).name("pallets").value(x.pallets())
+          .name("earliestMs").value(x.earliestMs()).name("latestMs").value(x.latestMs());
+    } else if (p instanceof Payloads.DeliveryStateChanged x) {
+      w.name("deliveryId").value(x.deliveryId()).name("from").value(name(x.from())).name("to").value(name(x.to()))
+          .name("tourId").value(x.tourId()).name("reason").value(x.reason());
+    } else if (p instanceof Payloads.TourPlanned x) {
+      w.name("tourId").value(x.tourId()).name("vehicleId").value(x.vehicleId()).name("planId").value(x.planId())
+          .name("departAtMs").value(x.departAtMs());
+      strings(w.name("deliveryIds"), x.deliveryIds());
+      w.name("km").value(x.km()).name("cost").value(x.cost());
+    } else if (p instanceof Payloads.TourStateChanged x) {
+      w.name("tourId").value(x.tourId()).name("from").value(name(x.from())).name("to").value(name(x.to()))
+          .name("reason").value(x.reason());
+    } else if (p instanceof Payloads.VehicleStateChanged x) {
+      w.name("vehicleId").value(x.vehicleId()).name("from").value(name(x.from())).name("to").value(name(x.to()));
+    } else if (p instanceof Payloads.DeliveryPlanComputed x) {
+      w.name("planId").value(x.planId()).name("solver").value(x.solver()).name("waveAtMs").value(x.waveAtMs())
+          .name("trigger").value(x.trigger());
+      figures(w.name("baseline"), x.baseline());
+      figures(w.name("optimized"), x.optimized());
+      strings(w.name("unassigned"), x.unassigned());
     } else {
       throw new IllegalStateException("Nutzlast ohne JSON-Form");
     }
     w.endObject();
+  }
+
+  static void figures(JsonWriter w, Payloads.PlanFigures f) {
+    w.beginObject().name("km").value(f.km()).name("driveMinutes").value(f.driveMinutes()).name("cost").value(f.cost())
+        .name("lateMinutes").value(f.lateMinutes()).name("tours").value(f.tours()).endObject();
   }
 
   private static void place(JsonWriter w, Place p) {
