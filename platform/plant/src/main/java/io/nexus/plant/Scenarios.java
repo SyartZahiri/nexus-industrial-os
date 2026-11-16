@@ -177,17 +177,19 @@ final class Scenarios {
   }
 
   /**
-   * A: a fault on a CNC that is producing and has further operations planned. The running batch stays in the machine
-   * (its parts are inside); SmartFactory moves the waiting operations to machines with the same capability (Spec 10).
-   * Passes when at least one of them is assigned to another machine.
+   * A: a fault on a CNC that is producing. The running batch stays in the machine (its parts are inside); SmartFactory
+   * plans the work around it on machines with the same capability (Spec 10). So that there is work to plan around in
+   * every run, the scenario then places an order whose first step prefers the failed machine. Passes when that step,
+   * or an operation that was waiting on the machine, is planned on another machine.
    */
   final class MachineFailure extends Run {
     private String machineId;
-    private final List<String> waiting = new ArrayList<>(); // "orderId/seq" planned on the machine before the fault
+    private int probeSeq = 1;
+    private final List<String> watched = new ArrayList<>(); // "orderId/seq" that must leave the machine
 
     @Override
     void begin(long now) {
-      note(this, now, "Wartet auf eine CNC, die fertigt und weitere Arbeitsgänge eingeplant hat");
+      note(this, now, "Wartet auf eine CNC, die gerade fertigt");
     }
 
     @Override
@@ -196,21 +198,17 @@ final class Scenarios {
         trigger(now);
         return;
       }
-      int moved = 0;
-      String to = null;
-      for (String key : waiting) {
+      for (String key : watched) {
         int slash = key.lastIndexOf('/');
         String order = key.substring(0, slash);
         int seq = Integer.parseInt(key.substring(slash + 1));
-        for (Operation op : sf.operations(order)) {
-          if (op.seq() == seq && op.machineId() != null && !op.machineId().equals(machineId)) {
-            moved++;
-            to = op.machineId();
+        for (Plan.PlannedOp op : sf.plan().ops()) {
+          if (op.orderId().equals(order) && op.seq() == seq && !op.machineId().equals(machineId)) {
+            finish(this, now, true, "Auftrag " + order + " Schritt " + seq + " umgeplant auf Ausweichmaschine "
+                + op.machineId() + " statt " + machineId);
+            return;
           }
         }
-      }
-      if (moved > 0) {
-        finish(this, now, true, moved + " von " + waiting.size() + " Arbeitsgängen umgeplant von " + machineId + ", zuletzt auf " + to);
       }
     }
 
@@ -219,26 +217,37 @@ final class Scenarios {
         if (m.status() != MachineStatus.RUNNING || SmartFactoryMasterData.machine(m.id()).kind() != MachineKind.CNC) continue;
         Operation running = sf.runningOn(m.id());
         if (running == null) continue;
-        List<String> planned = new ArrayList<>();
+        machineId = m.id();
         for (Plan.PlannedOp op : sf.plan().ops()) {
           boolean isRunning = op.orderId().equals(running.orderId()) && op.seq() == running.seq();
-          if (op.machineId().equals(m.id()) && !isRunning) planned.add(op.orderId() + "/" + op.seq());
+          if (op.machineId().equals(machineId) && !isRunning) watched.add(op.orderId() + "/" + op.seq());
         }
-        if (planned.isEmpty()) continue;
-        machineId = m.id();
-        waiting.addAll(planned);
         sf.injectFault(machineId, "SERVO");
-        String first = planned.get(0).substring(0, planned.get(0).lastIndexOf('/'));
-        started(this, now, first, "Störung SERVO an " + machineId + ", " + planned.size()
-            + " Arbeitsgänge dort eingeplant, das laufende Los von " + running.orderId() + " bleibt in der Maschine");
+        String product = productFor(machineId);
+        String probe = sf.createOrder(new NewOrder(product, 2, Priority.NORMAL, 4 * 60 * MIN));
+        watched.add(probe + "/" + probeSeq);
+        started(this, now, probe, "Störung SERVO an " + machineId + ", das laufende Los von " + running.orderId()
+            + " bleibt in der Maschine; Auftrag " + probe + " (" + product + ") bevorzugt " + machineId);
         return;
       }
     }
 
+    /** A product whose first step prefers the machine, else one whose first step the machine can do. */
+    private String productFor(String machine) {
+      var abilities = SmartFactoryMasterData.machine(machine).capabilities();
+      String able = null;
+      for (var step : SmartFactoryMasterData.routing()) {
+        if (step.seq() != 1) continue;
+        if (machine.equals(step.preferredMachineId())) return step.productId();
+        if (able == null && abilities.contains(step.process())) able = step.productId();
+      }
+      return able != null ? able : SmartFactoryMasterData.products().get(0).id();
+    }
+
     @Override
     String timeoutReason() {
-      return machineId == null ? "Keine CNC fertigte mit weiteren eingeplanten Arbeitsgängen; läuft die Simulation mit Aufträgen?"
-          : "Kein Arbeitsgang verliess " + machineId;
+      return machineId == null ? "Keine CNC fertigte; läuft die Simulation mit Aufträgen?"
+          : "Keine Arbeit wurde von " + machineId + " auf eine Ausweichmaschine geplant";
     }
   }
 

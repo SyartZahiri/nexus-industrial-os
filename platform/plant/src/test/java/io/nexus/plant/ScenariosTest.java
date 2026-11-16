@@ -108,6 +108,16 @@ class ScenariosTest {
   }
 
   @Test
+  void aMachineFailureRightAfterTheStartFindsAnAlternative() {
+    Plant p = Plant.inMemory(4711, PlantRules.DEFAULT); // the browser's default seed, scenario started at once
+    p.advance(5_000);
+    assertThat(start(p, "A")).containsEntry("ok", true);
+    var run = untilDone(p, 30 * MIN);
+    assertThat(run).containsEntry("state", "PASSED");
+    assertThat(texts(run)).last().asString().contains("Ausweichmaschine");
+  }
+
+  @Test
   void anAgvFailureHandsTheLoadToAnotherAgv() {
     Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
     p.advance(5 * MIN);
@@ -169,4 +179,5 @@ class ScenariosTest {
     assertThat(run).containsEntry("state", "PASSED");
     assertThat(texts(run)).last().isEqualTo("Kein anderer Auftrag verschoben");
   }
+
 }
