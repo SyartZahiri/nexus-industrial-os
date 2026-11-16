@@ -8,7 +8,7 @@ RUN ./mvnw -B -q -pl platform/web -am package -DskipTests
 FROM node:24 AS build
 COPY --from=core /src /src
 WORKDIR /src/FactoryTwin
-RUN npm ci && npx vite build --mode server
+RUN npm ci --ignore-scripts && npx vite build --mode server
 
 FROM nginx:1.27-alpine
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
