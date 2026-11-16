@@ -118,4 +118,5 @@ Die Oberfläche enthält keine Geschäftsregeln. Jeder Befehl geht als JSON an d
 
 ## Deployment
 
-Der Build nutzt relative Pfade (`base: './'`) und läuft deshalb als statische Seite unter jedem Pfad, zum Beispiel auf GitHub Pages. Ein Deployment-Workflow ist noch nicht eingerichtet.
+- **GitHub Pages (Browser-Modus):** der Workflow `.github/workflows/pages.yml` baut bei jedem Push auf `main` den Browser-Modus und veröffentlicht `dist`. Einmalig in den Repository-Einstellungen unter *Pages* als Quelle „GitHub Actions“ wählen. Der Build nutzt relative Pfade (`base: './'`) und läuft deshalb unter jedem Pfad, auch `https://<nutzer>.github.io/<repo>/`.
+- **Docker Compose (Server-Modus):** `docker compose up --build` im Wurzelverzeichnis startet PostgreSQL, den Server und die Oberfläche auf `http://localhost:8080`. Ohne Anmeldung, nur lokal betreiben.
