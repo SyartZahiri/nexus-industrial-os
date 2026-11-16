@@ -36,6 +36,7 @@ public final class PlantQueries {
         case "warehouse" -> warehouse();
         case "network" -> network(plant);
         case "kpiSeries" -> kpiSeries(plant, q);
+        case "scenarios" -> plant.scenariosJson();
         default -> throw DomainException.invalid("Unbekannte Abfrage");
       };
       return new JsonWriter().beginObject().name("ok").value(true).name("result").raw(result).endObject().toString();

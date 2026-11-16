@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -25,5 +25,5 @@ export default defineConfig({
       '/ws': { target: 'ws://localhost:8080', ws: true },
     },
   },
-  test: { environment: 'node' },
+  test: { environment: 'node', exclude: [...configDefaults.exclude, 'e2e/**'] }, // e2e/ is Playwright's
 });

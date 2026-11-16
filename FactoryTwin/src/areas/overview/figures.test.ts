@@ -21,7 +21,8 @@ describe('overviewFigures', () => {
     expect(f.bottleneck).toBeNull();
   });
 
-  it('counts open, late and moving work from the frame', () => {
+  // simulates 90 minutes in the core: about 2 s on an idle machine, so a generous limit for a busy one
+  it('counts open, late and moving work from the frame', { timeout: 30_000 }, () => {
     const frame = frameAfter(90);
     const f = overviewFigures(frame, kpisAfter(), []);
     expect(f.openOrders).toBe(frame.orders.filter((o) => !['COMPLETED', 'CANCELLED'].includes(o.status)).length);

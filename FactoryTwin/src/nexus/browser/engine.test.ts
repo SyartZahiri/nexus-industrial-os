@@ -77,4 +77,16 @@ describe('BrowserEngine', () => {
     expect(ask({ query: 'network' }).ok).toBe(true);
     expect(ask({ query: 'kpiSeries', bucketMinutes: 10, buckets: 6 }).ok).toBe(true);
   });
+
+  it('runs a scenario in the TeaVM core', () => {
+    const engine = new BrowserEngine(core, 7);
+    const started = engine.handle({ id: 1, kind: 'command', body: { command: 'runScenario', scenario: 'E' } }).answer as {
+      ok: boolean;
+      result: { runId: string };
+    };
+    expect(started.ok).toBe(true);
+    expect(started.result.runId).toBe('SZ-1');
+    const list = engine.handle({ id: 2, kind: 'query', body: { query: 'scenarios' } }).answer as { ok: boolean; result: { runs: unknown[] } };
+    expect(list.result.runs).toHaveLength(1);
+  });
 });

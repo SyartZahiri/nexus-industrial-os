@@ -183,3 +183,10 @@ export const PRIORITY_LABEL: Record<'NORMAL' | 'HOCH' | 'EILIG', string> = { NOR
 export function stateOf(map: StateMap, code: string): { text: string; color: string } {
   return map[code] ?? { text: code, color: STATE_HEX.unknown };
 }
+
+export const SCENARIO_STATE: StateMap = {
+  WAITING: { text: 'Wartet auf Auslöser', color: STATE_HEX.wait },
+  RUNNING: { text: 'Läuft', color: STATE_HEX.setup },
+  PASSED: { text: 'Bestanden', color: STATE_HEX.run },
+  FAILED: { text: 'Nicht bestanden', color: STATE_HEX.fault },
+};
