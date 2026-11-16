@@ -49,13 +49,13 @@ Die Navigation links (unter 1024 px ein Menü) führt zu elf Bereichen. Die Simu
 | Betrieb | Warehouse | fertig: Bestand, Reservierung und Meldebestand je Lagerplatz, Wareneingang mit freiem Platz |
 | Systeme | SmartFactory | fertig: Aufträge mit Schritten, Priorität und Storno, Plan je Maschine (Gantt), neue Aufträge |
 | Systeme | FlowPilot | fertig: AGV-Flotte, offene Transporte, Wegenetz als Karte mit Sperren und Freigeben |
-| Systeme | RouteMind | kommt mit M4 |
+| Systeme | RouteMind | fertig: Karte mit Depot, Kunden, Touren entlang der Strassen und fahrenden Lieferfahrzeugen; Touren mit Stopps und Ankunftszeiten, Lieferfahrzeuge mit Panne, Reparatur und Wartung, Lieferungen mit geplanter und tatsächlicher Zeit, Planvergleich (Ausgangsplan, optimiert, gegen vorigen Plan) und Logistik-Kennzahlen |
 | Auswertung | Analytics | fertig: Durchsatz, Termintreue, Durchlaufzeit, OEE je Maschine, Zeit je Zustand, Verlauf über 1 h, 8 h oder 24 h |
 | Auswertung | Event Monitor | fertig: Filter nach Auftrag, Typ und Schweregrad, Live-Ansicht, ganze Geschichte seitenweise |
-| Auswertung | Scenario Lab | fertig: fünf Szenarien starten und verfolgen, mit Zustand, Schrittfolge und Ereigniskette |
+| Auswertung | Scenario Lab | fertig: zehn Szenarien starten und verfolgen, mit Zustand, Schrittfolge und Ereigniskette |
 | System | Settings | fertig: Regeln der Anlage, Tempo, Seed, Darstellung |
 
-Ein Bereich, der noch kommt, sagt, wofür er da ist und wo man das Gleiche heute schon sieht. Machines, SmartFactory und FlowPilot öffnen die Auswahl aus der Adresse (`#/machines/CNC-02`, `#/smartfactory/PO-0004`, `#/flowpilot/AGV-03`); eine unbekannte ID nennt das und zeigt die Liste.
+Die Karte von RouteMind (MapLibre GL JS) wird erst beim Öffnen des Bereichs geladen; ihre Kacheln kommen zur Laufzeit von OpenStreetMap. Machines, SmartFactory, FlowPilot und RouteMind öffnen die Auswahl aus der Adresse (`#/machines/CNC-02`, `#/smartfactory/PO-0004`, `#/flowpilot/AGV-03`, `#/routemind/TR-0001`); eine unbekannte ID nennt das und zeigt die Liste.
 
 ## Scenario Lab
 
@@ -68,14 +68,19 @@ Ein Szenario greift einmal in die laufende Anlage ein und prüft dann jede simul
 | C | Materialengpass | Bestand des ersten Materials auf die Hälfte des Bedarfs abgebucht, dann ein Auftrag über 10 Stück | der Auftrag wartet ohne Reservierung in SHORTAGE auf den Wareneingang | 30 min |
 | D | Expressauftrag | Auftrag mit Priorität eilig | er ist eingeplant; verschobene Aufträge stehen mit ihrer Verspätung in der Schrittfolge | 5 min |
 | E | Kompletter Durchlauf | neuer Auftrag über 2 Stück | Fertigware eingelagert; Freigabe, jeder Schritt und die Einlagerung als Schrittfolge | 6 h |
+| F | Produktionsverzögerung | die letzte Maschine eines Auftrags mit geplanter Lieferung steht, bis die Tour abfährt | die Tour fährt nicht mit der unfertigen Ware: Neuplanung oder Abfahrt ohne sie | 6 h |
+| G | Ausfall eines Lieferfahrzeugs | Panne eines beladenen Lieferfahrzeugs unterwegs | Tour unterbrochen, offene Lieferungen in einer neuen Tour | 6 h |
+| H | Expressauftrag bis zur Lieferplanung | Eilauftrag | seine Lieferung ist in einer der nächsten Wellen geplant | 3 h |
+| I | Materialengpass und Liefertermin | Auftrag über Bestand wie bei C | Auftrag in SHORTAGE, die Lieferung bekommt bis zur nächsten Welle keinen Termin | 2 h |
+| J | Vollständige Lieferkette | neuer Auftrag über 2 Stück | Ware beim Kunden; Freigabe, Einlagerung, Verladung, Abfahrt und Zustellung als Schrittfolge | 10 h |
 
 Die Zeitgrenzen sind Simulationszeit; eine pausierte Simulation verbraucht keine. C bucht echten Bestand ab, A und C legen eigene Aufträge an. `scenario.started` und `scenario.finished` tragen die Auftrags-ID als `correlationId`; der Link „Ereignisse“ zeigt die ganze Kette im Event Monitor. Ein Reset vergisst alle Läufe. Im Server-Betrieb gibt es dazu `GET /api/v1/scenarios` und `POST /api/v1/scenarios/{id}/run`.
 
 ## End-to-End-Tests
 
 ```bash
-npm run e2e          # Browser-Modus: Szenarien A bis E und Bildrate, Vite auf Port 5173
-npm run e2e:server   # Server-Modus: Szenarien A bis E gegen Spring Boot, PostgreSQL und OPC UA (Port 8080, Oberfläche 5179)
+npm run e2e          # Browser-Modus: Szenarien A bis E und H, RouteMind und Bildrate, Vite auf Port 5173
+npm run e2e:server   # Server-Modus: Szenarien A bis E und H, RouteMind gegen Spring Boot, PostgreSQL und OPC UA (Port 8080, Oberfläche 5179)
 ```
 
 Die Tests liegen in `e2e/`. Lokal nutzt Playwright den installierten Chrome, ein Browser-Download ist nicht nötig. Laufende Server werden wiederverwendet. Die Server-Variante braucht Java 25 und baut den Server beim ersten Start (etwa eine Minute). Beide Läufe dauern danach unter einer Minute.
