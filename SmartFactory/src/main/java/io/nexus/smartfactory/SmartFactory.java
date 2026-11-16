@@ -12,6 +12,7 @@ import io.nexus.contracts.port.MachineControl;
 import io.nexus.contracts.port.MachineFeedback;
 import io.nexus.contracts.port.MaterialService;
 import io.nexus.contracts.port.ProductCatalog;
+import io.nexus.contracts.port.ProductionEta;
 import io.nexus.contracts.port.TransportService;
 import io.nexus.contracts.sim.SimTime;
 import io.nexus.contracts.state.MachineStatus;
@@ -90,6 +91,15 @@ public final class SmartFactory implements MachineFeedback {
 
   public ProductCatalog catalog() {
     return catalog;
+  }
+
+  /** ProductionEta for RouteMind: planned end of the order's last planned operation, -1 if none is planned. */
+  public ProductionEta eta() {
+    return orderId -> {
+      long end = -1;
+      for (Plan.PlannedOp op : plan().ops()) if (op.orderId().equals(orderId)) end = Math.max(end, op.endMs());
+      return end;
+    };
   }
 
   public String createOrder(NewOrder order) {
