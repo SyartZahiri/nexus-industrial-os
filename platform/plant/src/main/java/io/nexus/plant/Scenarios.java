@@ -46,7 +46,7 @@ final class Scenarios {
 
   static final List<Definition> DEFINITIONS = List.of(
       new Definition("A", "Maschinenausfall", "Störung an einer laufenden CNC",
-          "Umplanung auf eine Ausweichmaschine, Transporte umgeleitet", 30 * MIN),
+          "Umplanung auf eine Ausweichmaschine", 30 * MIN),
       new Definition("B", "AGV-Ausfall", "Störung an einem beladenen AGV",
           "Transport fällt aus, ein Ersatz-AGV übernimmt die Ladung", 30 * MIN),
       new Definition("C", "Materialengpass", "Bestand gesenkt, dann ein Auftrag über dem Bestand",
@@ -84,12 +84,21 @@ final class Scenarios {
       case "E" -> new FullRun();
       default -> throw DomainException.notFound("Szenario", scenarioId);
     };
+    return begin(def, run, now);
+  }
+
+  /**
+   * Runs the intervention first and lists the run only when it succeeded: a failed intervention throws to the caller
+   * and leaves no run behind that would block every further start until its time limit.
+   */
+  String begin(Definition def, Run run, long now) {
     run.def = def;
-    run.runId = "SZ-" + (++counter);
+    run.runId = "SZ-" + (counter + 1);
     run.startedAtMs = now;
+    run.begin(now);
+    counter++;
     runs.add(0, run);
     while (runs.size() > KEEP) runs.remove(runs.size() - 1);
-    run.begin(now);
     return run.runId;
   }
 

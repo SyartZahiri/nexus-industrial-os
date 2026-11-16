@@ -163,6 +163,11 @@ public final class Plant {
     }
   }
 
+  /** Tests only: the scenario runner of this plant. */
+  Scenarios scenarios() {
+    return scenarios;
+  }
+
   /** The scenarios and their last runs as JSON (PlantQueries "scenarios"). */
   public String scenariosJson() {
     synchronized (bus) {

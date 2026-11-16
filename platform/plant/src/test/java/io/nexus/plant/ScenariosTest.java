@@ -180,4 +180,37 @@ class ScenariosTest {
     assertThat(texts(run)).last().isEqualTo("Kein anderer Auftrag verschoben");
   }
 
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void aPromisesOnlyWhatItChecks() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    var result = (Map<String, Object>) answer(PlantQueries.apply(p, "{\"query\":\"scenarios\"}")).get("result");
+    var a = ((List<Map<String, Object>>) result.get("definitions")).get(0);
+    assertThat((String) a.get("expected")).doesNotContain("Transporte"); // A checks the plan, not rerouted transports
+  }
+
+  @Test
+  void aFailingInterventionLeavesNoRunBehind() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    Scenarios sc = p.scenarios();
+    Scenarios.Run broken = sc.new Run() {
+      @Override
+      void begin(long now) {
+        throw new IllegalStateException("Eingriff gescheitert");
+      }
+
+      @Override
+      void check(long now) {}
+
+      @Override
+      String timeoutReason() {
+        return "";
+      }
+    };
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> sc.begin(Scenarios.DEFINITIONS.get(4), broken, 0))
+        .hasMessage("Eingriff gescheitert");
+    assertThat(runs(p)).isEmpty();
+    assertThat(start(p, "E")).containsEntry("ok", true).extractingByKey("result").asString().contains("SZ-1");
+  }
 }
