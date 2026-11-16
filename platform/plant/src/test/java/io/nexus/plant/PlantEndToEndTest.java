@@ -1,5 +1,7 @@
 package io.nexus.plant;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import io.nexus.contracts.Domain.Priority;
 import io.nexus.contracts.Domain.TransportKind;
 import io.nexus.contracts.Place;
@@ -20,7 +22,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
-import static org.assertj.core.api.Assertions.assertThat;
 
 class PlantEndToEndTest {
   static final PlantRules QUIET = new PlantRules(new SimRules(false, true, false, 0.85), false, 360_000, 6, false,

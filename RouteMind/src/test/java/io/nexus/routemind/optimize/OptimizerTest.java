@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
-class OptimizerTest {
+public class OptimizerTest {
   static final Matrix ROADS = new Matrix() {
     @Override public int seconds(int from, int to) { return Roads.seconds(from, to); }
     @Override public int meters(int from, int to) { return Roads.meters(from, to); }
@@ -28,7 +28,7 @@ class OptimizerTest {
   }
 
   /** n jobs at random customers, 50..650 kg, 1..3 pallets, windows of 2..6 h starting up to 1 h after departure. */
-  static Problem instance(long seed, int n) {
+  public static Problem instance(long seed, int n) {
     var r = new SeededRandom(seed);
     List<Job> jobs = new ArrayList<>();
     for (int i = 0; i < n; i++) {
@@ -40,7 +40,7 @@ class OptimizerTest {
     return new Problem(DEPART, 0, fleet(DEPART + 10 * RouteMindMasterData.HOUR), jobs, ROADS);
   }
 
-  static void assertValid(Problem p, Solution s) {
+  public static void assertValid(Problem p, Solution s) {
     Set<String> seen = new HashSet<>();
     for (Route route : s.routes()) {
       Truck t = p.truck(route.truckId());

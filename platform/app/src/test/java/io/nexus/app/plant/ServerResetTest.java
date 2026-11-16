@@ -1,5 +1,7 @@
 package io.nexus.app.plant;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import io.nexus.app.event.JdbcEventLog;
 import io.nexus.app.event.SimRun;
 import io.nexus.contracts.state.VehicleStatus;
@@ -12,10 +14,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
-import static org.assertj.core.api.Assertions.assertThat;
 
 /** After a reset the server plant behaves exactly like a freshly started one: same events, same frame. */
-@SpringBootTest
+@SpringBootTest(properties = "nexus.routemind.solver=heuristic") // compared with the browser runtime
 @ActiveProfiles("embedded")
 class ServerResetTest {
   @Autowired PlantReset reset;

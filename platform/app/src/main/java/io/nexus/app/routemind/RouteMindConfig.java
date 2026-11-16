@@ -11,6 +11,7 @@ import io.nexus.routemind.optimize.RouteOptimizer;
 import io.nexus.routemind.optimize.SavingsHeuristic;
 import io.nexus.routemind.store.RouteStore;
 import io.nexus.smartfactory.SmartFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -24,7 +25,11 @@ class RouteMindConfig {
   }
 
   @Bean
-  RouteOptimizer routeOptimizer() {
-    return new SavingsHeuristic();
+  RouteOptimizer routeOptimizer(@Value("${nexus.routemind.solver:ortools}") String solver) {
+    return switch (solver) {
+      case "ortools" -> new OrToolsOptimizer();
+      case "heuristic" -> new SavingsHeuristic();
+      default -> throw new IllegalArgumentException("nexus.routemind.solver: ortools oder heuristic, nicht " + solver);
+    };
   }
 }

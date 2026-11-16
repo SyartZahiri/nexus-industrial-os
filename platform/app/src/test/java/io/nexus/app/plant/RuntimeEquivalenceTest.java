@@ -14,7 +14,7 @@ import org.springframework.test.context.ActiveProfiles;
  * machine fault, an AGV fault, an express order) on the server with PostgreSQL gives exactly the text the in-memory
  * plant gives; the browser build gives that same text too (platform/web, plant-run.mjs).
  */
-@SpringBootTest
+@SpringBootTest(properties = "nexus.routemind.solver=heuristic") // plans like the browser runtime
 @ActiveProfiles("embedded")
 class RuntimeEquivalenceTest {
   @Autowired Plant plant;

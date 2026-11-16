@@ -1,10 +1,11 @@
 package io.nexus.plant;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import io.nexus.contracts.json.JsonReader;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import static org.assertj.core.api.Assertions.assertThat;
 
 class PlantQueriesTest {
   @SuppressWarnings("unchecked")
