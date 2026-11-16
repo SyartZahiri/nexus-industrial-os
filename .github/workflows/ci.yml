@@ -88,3 +88,36 @@ jobs:
           name: playwright-results
           path: FactoryTwin/test-results
           retention-days: 7
+
+  compose:
+    name: Docker Compose (server, PostgreSQL, interface)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start
+        run: docker compose up --build --detach
+      - name: Wait for the server behind nginx
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:8080/api/v1/sim > /dev/null; then echo "server up after $((i * 2)) s"; exit 0; fi
+            sleep 2
+          done
+          docker compose logs app
+          exit 1
+      - name: Interface, API, scenarios and WebSocket through nginx
+        run: |
+          curl -fsS http://localhost:8080/ | grep -q "NEXUS Industrial OS"
+          curl -fsS http://localhost:8080/api/v1/scenarios | grep -q '"id":"E"'
+          status=$(curl -s -o /dev/null -w "%{http_code}" -H "Origin: http://localhost:8080" -X POST http://localhost:8080/api/v1/sim/play)
+          test "$status" = 204
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 -H "Origin: http://localhost:8080" \
+            -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" \
+            -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" http://localhost:8080/ws || true)
+          test "$code" = 101
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: Stop
+        if: always()
+        run: docker compose down --volumes
