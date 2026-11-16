@@ -12,6 +12,7 @@ import { TwinArea } from '../areas/TwinArea';
 import { cx } from '../ui/primitives';
 import { areaById, type AreaId } from './areas';
 import { Nav } from './Nav';
+import { RouteMindArea } from '../areas/routemind/RouteMindArea';
 import { Placeholder } from './Placeholder';
 import { useRoute } from './route';
 import { SimBar } from './SimBar';
@@ -31,6 +32,8 @@ function page(area: AreaId, param: string | null): ReactNode {
       return <WarehouseArea />;
     case 'smartfactory':
       return <SmartFactoryArea orderId={param} />;
+    case 'routemind':
+      return <RouteMindArea tourId={param} />;
     case 'flowpilot':
       return <FlowPilotArea agvId={param} />;
     case 'analytics':

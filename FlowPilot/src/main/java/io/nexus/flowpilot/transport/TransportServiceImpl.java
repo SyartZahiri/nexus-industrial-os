@@ -82,7 +82,13 @@ public final class TransportServiceImpl implements TransportService {
     if (r.kind() != TransportKind.WIP && (r.materialId() == null || r.materialId().isBlank())) {
       throw DomainException.invalid("Versorgung und Einlagerung brauchen ein Material");
     }
-    if (r.kind() == TransportKind.SUPPLY) {
+    if (r.kind() == TransportKind.SHIPMENT) {
+      if (r.to().kind() != Place.Kind.LOADING) throw DomainException.invalid("Verladung geht nur in die Verladezone");
+      if (!places.location(r.from().id()).zone().equals("FINISHED")) {
+        throw DomainException.invalid("Verladen wird nur aus dem Fertiglager");
+      }
+    }
+    if (r.kind() == TransportKind.SUPPLY || r.kind() == TransportKind.SHIPMENT) {
       Reservation res = r.reservationId() == null ? null : stock.reservation(r.reservationId()).orElse(null);
       boolean matches = res != null && res.status() == Reservation.Status.ACTIVE
           && res.orderId().equals(r.orderId()) && res.materialId().equals(r.materialId())

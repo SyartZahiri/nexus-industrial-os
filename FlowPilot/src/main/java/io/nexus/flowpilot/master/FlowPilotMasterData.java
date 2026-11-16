@@ -88,4 +88,13 @@ public final class FlowPilotMasterData {
   public static List<MachineDock> machineDocks() { return MACHINE_DOCKS; }
 
   public static List<ConveyorDock> conveyorDocks() { return CONVEYOR_DOCKS; }
+
+  /** Where RouteMind's vehicles are loaded; reached through dockNode. */
+  public record LoadingZone(String id, String name, String dockNode) {}
+
+  public static final String LOADING_ZONE = "LZ-1";
+  private static final List<LoadingZone> LOADING_ZONES =
+      List.of(new LoadingZone(LOADING_ZONE, "Verladezone Süd", "D_LZ"));
+
+  public static List<LoadingZone> loadingZones() { return LOADING_ZONES; }
 }

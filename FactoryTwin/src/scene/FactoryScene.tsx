@@ -4,6 +4,7 @@ import { lazy, Suspense } from 'react';
 import * as THREE from 'three';
 import { plant, useFactory } from '../store/factoryStore';
 import { Hall } from './Hall';
+import { LoadingZone } from './LoadingZone';
 import { AgvFleet, Chargers, ConveyorModel, Warehouse } from './Logistics';
 import { CncMachine, QcStation, RobotCell } from './Machines';
 import { CameraRig, Labels, SelectionOverlay } from './Overlay';
@@ -76,6 +77,7 @@ export function FactoryScene() {
         <Warehouse kind="raw" />
         <Warehouse kind="finished" />
         <Chargers />
+        <LoadingZone />
         <AgvFleet />
         <Workpieces />
         <SelectionOverlay />

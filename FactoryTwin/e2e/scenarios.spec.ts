@@ -29,16 +29,17 @@ const SCENARIOS: [id: string, title: string][] = [
   ['C', 'Materialengpass'],
   ['D', 'Expressauftrag'],
   ['E', 'Kompletter Durchlauf'],
+  ['H', 'Expressauftrag bis zur Lieferplanung'],
 ];
 
 for (const [id, title] of SCENARIOS) {
   test(`Szenario ${id}: ${title}`, async ({ page, baseURL }) => {
-    test.setTimeout(id === 'E' ? 20 * 60_000 : 8 * 60_000);
+    test.setTimeout(id === 'E' || id === 'H' ? 20 * 60_000 : 8 * 60_000);
     await freshPlant(page, baseURL);
     const row = page.getByRole('listitem', { name: `Szenario ${id}: ${title}` });
     await row.getByRole('button', { name: `Szenario ${id} starten` }).click();
-    // E needs up to six simulated hours: at 25× that is under 15 real minutes, usually far less
-    await expect(row.getByText('Bestanden', { exact: true })).toBeVisible({ timeout: id === 'E' ? 15 * 60_000 : 6 * 60_000 });
+    // E needs up to six simulated hours, H up to three: at 25× that is under 15 real minutes, usually far less
+    await expect(row.getByText('Bestanden', { exact: true })).toBeVisible({ timeout: id === 'E' || id === 'H' ? 15 * 60_000 : 6 * 60_000 });
 
     // the chain of the scenario in the event monitor, filtered by its order
     await row.getByRole('link', { name: 'Ereignisse' }).click();

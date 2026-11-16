@@ -177,6 +177,35 @@ export const TRANSPORT_STATE: StateMap = {
   CANCELLED: { text: 'Storniert', color: STATE_HEX.unknown },
 };
 
+export const DELIVERY_STATE: StateMap = {
+  CREATED: { text: 'Angelegt', color: STATE_HEX.idle },
+  AWAITING_GOODS: { text: 'Wartet auf Ware', color: STATE_HEX.wait },
+  READY_TO_LOAD: { text: 'Bereit zur Verladung', color: STATE_HEX.setup },
+  LOADED: { text: 'Verladen', color: STATE_HEX.setup },
+  IN_TRANSIT: { text: 'Unterwegs', color: STATE_HEX.run },
+  DELIVERED: { text: 'Zugestellt', color: STATE_HEX.idle },
+  FAILED: { text: 'Gescheitert', color: STATE_HEX.fault },
+  CANCELLED: { text: 'Storniert', color: STATE_HEX.unknown },
+};
+
+export const TOUR_STATE: StateMap = {
+  PLANNED: { text: 'Geplant', color: STATE_HEX.idle },
+  LOADING: { text: 'Verladung', color: STATE_HEX.setup },
+  EN_ROUTE: { text: 'Unterwegs', color: STATE_HEX.run },
+  COMPLETED: { text: 'Abgeschlossen', color: STATE_HEX.idle },
+  REPLANNED: { text: 'Ersetzt', color: STATE_HEX.unknown },
+  INTERRUPTED: { text: 'Unterbrochen', color: STATE_HEX.fault },
+};
+
+export const VEHICLE_STATE: StateMap = {
+  AVAILABLE: { text: 'Bereit', color: STATE_HEX.idle },
+  LOADING: { text: 'Verladung', color: STATE_HEX.setup },
+  EN_ROUTE: { text: 'Unterwegs', color: STATE_HEX.run },
+  RETURNING: { text: 'Rückfahrt', color: STATE_HEX.run },
+  MAINTENANCE: { text: 'Wartung', color: STATE_HEX.maint },
+  BROKEN_DOWN: { text: 'Panne', color: STATE_HEX.fault },
+};
+
 export const PRIORITY_LABEL: Record<'NORMAL' | 'HOCH' | 'EILIG', string> = { NORMAL: 'Normal', HOCH: 'Hoch', EILIG: 'Eilig' };
 
 /** A code the map does not know (a newer core) stays readable as itself. */

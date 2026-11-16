@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.nexus.contracts.json.JsonReader;
 import io.nexus.contracts.state.MachineStatus;
 import io.nexus.contracts.state.OrderStatus;
+import io.nexus.contracts.state.VehicleStatus;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -98,5 +99,15 @@ class PlantCommandsTest {
     assertThat(send("{\"command\":\"machineStart\",\"machineId\":\"CNC-99\"}")).containsEntry("status", 404L);
     assertThat(send("{\"command\":\"machineRepair\",\"machineId\":\"CNC-01\"}")).containsEntry("status", 409L);
     assertThat(send("{\"command\":\"setDispatchRule\",\"rule\":\"RANDOM\"}")).containsEntry("status", 400L);
+  }
+
+  @Test
+  void vehicleCommandsReachRouteMind() {
+    assertThat(send("{\"command\":\"vehicleMaintenance\",\"vehicleId\":\"LW-1\",\"on\":true}")).containsEntry("ok", true);
+    assertThat(plant.routeMind().trucks().stream().filter(t -> t.id().equals("LW-1")).findFirst().orElseThrow().status())
+        .isEqualTo(VehicleStatus.MAINTENANCE);
+    assertThat(send("{\"command\":\"vehicleBreakdown\",\"vehicleId\":\"LW-1\"}")).containsEntry("status", 409L);
+    assertThat(send("{\"command\":\"vehicleBreakdown\",\"vehicleId\":\"LKW-9\"}")).containsEntry("status", 404L);
+    assertThat(send("{\"command\":\"replanDeliveries\"}")).containsEntry("ok", true);
   }
 }

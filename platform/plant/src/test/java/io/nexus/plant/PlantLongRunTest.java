@@ -2,6 +2,8 @@ package io.nexus.plant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.nexus.contracts.event.EventTypes;
+import io.nexus.contracts.event.Payloads;
 import io.nexus.contracts.state.AgvStatus;
 import io.nexus.contracts.state.OrderStatus;
 import io.nexus.flowpilot.FlowPilot.VehicleView;
@@ -47,6 +49,11 @@ class PlantLongRunTest {
     }
     long completed = plant.smartFactory().orders().stream().filter(o -> o.status() == OrderStatus.COMPLETED).count();
     assertThat(completed).as("orders completed in four hours").isGreaterThanOrEqualTo(15);
+    assertThat(plant.events()).as("no phase failed").noneSatisfy(e -> {
+      assertThat(e.type()).isEqualTo(EventTypes.DECISION);
+      assertThat(((Payloads.Decision) e.payload()).subject()).isEqualTo("Simulationsschritt");
+    });
+    assertThat(plant.routeMind().kpis().delivered()).as("deliveries in four hours").isGreaterThanOrEqualTo(5);
   }
 
   private static void checkFleet(List<VehicleView> vehicles, List<TransportOrder> open) {

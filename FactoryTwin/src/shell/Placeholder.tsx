@@ -3,9 +3,7 @@ import { areaById } from './areas';
 import { hrefOf } from './route';
 
 /** Where the work of a coming area can already be seen today. */
-const MEANWHILE: Partial<Record<AreaId, { to: AreaId; text: string }>> = {
-  routemind: { to: 'overview', text: 'Fertigware und Versand stehen in der Overview und im Lager von FactoryTwin.' },
-};
+const MEANWHILE: Partial<Record<AreaId, { to: AreaId; text: string }>> = {};
 
 /** An area a later milestone builds: what it is for, when it comes, and where to look meanwhile. */
 export function Placeholder({ area }: { area: Area }) {

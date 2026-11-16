@@ -32,7 +32,7 @@ export const AREAS: Area[] = [
     summary: 'Aufträge, Planung und Termine der Fertigung.' },
   { id: 'flowpilot', label: 'FlowPilot', group: 'Systeme', hash: '#/flowpilot', comesWith: null,
     summary: 'Materialfluss, Transporte und die AGV-Flotte.' },
-  { id: 'routemind', label: 'RouteMind', group: 'Systeme', hash: '#/routemind', comesWith: 'M4',
+  { id: 'routemind', label: 'RouteMind', group: 'Systeme', hash: '#/routemind', comesWith: null,
     summary: 'Auslieferung an Kunden: Touren, Fahrzeuge und Karte.' },
   { id: 'machines', label: 'Machines', group: 'Betrieb', hash: '#/machines', comesWith: null,
     summary: 'Jede Maschine mit Zustand, Sensoren und Verlauf.' },

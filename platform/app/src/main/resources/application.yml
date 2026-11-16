@@ -15,6 +15,9 @@ nexus:
     seed: 4711
   opcua:
     port: ${NEXUS_OPCUA_PORT:4840}
+  routemind:
+    # ortools (server) or heuristic (the same plans as the browser)
+    solver: ortools
 ---
 spring:
   config:

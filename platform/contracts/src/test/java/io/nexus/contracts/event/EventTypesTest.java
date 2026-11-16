@@ -17,7 +17,7 @@ class EventTypesTest {
     for (Field f : EventTypes.class.getDeclaredFields()) {
       if (Modifier.isPublic(f.getModifiers()) && f.getType() == String.class) declared.add((String) f.get(null));
     }
-    assertThat(declared).hasSize(32).doesNotHaveDuplicates();
+    assertThat(declared).hasSize(38).doesNotHaveDuplicates();
     assertThat(EventTypes.all()).containsExactlyInAnyOrderElementsOf(declared);
     for (String type : declared) assertThat(EventTypes.payloadType(type)).as(type).isNotNull();
   }

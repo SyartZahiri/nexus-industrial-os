@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.nexus.app.event.JdbcEventLog;
 import io.nexus.app.event.SimRun;
+import io.nexus.contracts.state.VehicleStatus;
 import io.nexus.plant.Plant;
 import io.nexus.plant.PlantRules;
 import io.nexus.plant.Scenario1h;
+import io.nexus.routemind.RouteMind;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -14,7 +16,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 
 /** After a reset the server plant behaves exactly like a freshly started one: same events, same frame. */
-@SpringBootTest
+@SpringBootTest(properties = "nexus.routemind.solver=heuristic") // compared with the browser runtime
 @ActiveProfiles("embedded")
 class ServerResetTest {
   @Autowired PlantReset reset;
@@ -50,5 +52,23 @@ class ServerResetTest {
     assertThat(run.id()).isNotEqualTo(oldRun);
     assertThat(jdbc.sql("select count(*) from event where run_id = :r").param("r", oldRun).query(Integer.class).single())
         .as("events of the old run stay").isPositive();
+  }
+
+  @Autowired RouteMind routeMind;
+
+  @Test
+  void resetClearsRouteMind() {
+    reset.reset(4711);
+    plant.setRules(PlantRules.DEFAULT); // the other test leaves the rules of its scenario behind
+    plant.advance(2 * 3_600_000L);      // orders, putaways, a first wave
+    assertThat(routeMind.deliveries()).isNotEmpty();
+    reset.reset(4711);
+    assertThat(routeMind.deliveries()).isEmpty();
+    assertThat(routeMind.tours()).isEmpty();
+    assertThat(routeMind.plans()).isEmpty();
+    assertThat(routeMind.trucks()).allSatisfy(t -> {
+      assertThat(t.status()).isEqualTo(VehicleStatus.AVAILABLE);
+      assertThat(t.tourId()).isNull();
+    });
   }
 }

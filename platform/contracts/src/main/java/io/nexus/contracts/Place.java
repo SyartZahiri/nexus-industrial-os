@@ -13,7 +13,13 @@ public record Place(Kind kind, String id) {
     /** Pick-up point for finished parts of a machine. */
     MACHINE_OUT,
     CONVEYOR,
-    CHARGER
+    CHARGER,
+    /** A loading zone where RouteMind loads its delivery vehicles, e.g. LZ-1. */
+    LOADING
+  }
+
+  public static Place loading(String zoneId) {
+    return new Place(Kind.LOADING, zoneId);
   }
 
   public static Place storage(String locationId) {

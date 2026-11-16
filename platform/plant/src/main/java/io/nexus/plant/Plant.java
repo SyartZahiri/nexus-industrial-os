@@ -8,6 +8,7 @@ import io.nexus.contracts.event.Payloads;
 import io.nexus.contracts.event.EventIds;
 import io.nexus.contracts.event.NexusEvent;
 import io.nexus.contracts.memory.MemoryEventLog;
+import io.nexus.contracts.state.DeliveryStatus;
 import io.nexus.contracts.memory.MemoryIdSource;
 import io.nexus.contracts.memory.MemoryUnitOfWork;
 import io.nexus.contracts.sim.SeededRandom;
@@ -17,20 +18,24 @@ import io.nexus.flowpilot.store.StockLine;
 import io.nexus.flowpilot.store.TransportOrder;
 import io.nexus.plant.machines.LocalMachines;
 import io.nexus.plant.machines.MachineGateway;
+import io.nexus.routemind.RouteMind;
+import io.nexus.routemind.store.Delivery;
 import io.nexus.smartfactory.SmartFactory;
 import io.nexus.smartfactory.store.Operation;
 import io.nexus.smartfactory.store.ProductionOrder;
 import io.nexus.smartfactory.store.memory.MemoryMachineStore;
 import io.nexus.smartfactory.store.memory.MemoryOrderStore;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * The running plant: machines, FlowPilot and SmartFactory with one clock and one fixed step. Server and browser
- * use this class unchanged; only the stores behind FlowPilot and SmartFactory differ.
+ * The running plant: machines, FlowPilot, SmartFactory and RouteMind with one clock and one fixed step. Server and
+ * browser use this class unchanged; only the stores behind the modules differ.
  *
- * <p>Each step, in this order (Spec 11): clock, automatic orders, shipping, machines, FlowPilot, retry of failed
- * event deliveries. A step holds the event bus's monitor, the platform-wide lock every facade uses, so commands
+ * <p>Each step, in this order (Spec 11): clock, automatic orders, overflow shipping, machines, FlowPilot, RouteMind
+ * (deliveries, while the rule shipping is on), scenarios, retry of failed event deliveries. A step holds the event bus's monitor, the platform-wide lock every facade uses, so commands
  * from other threads land between steps, never inside one.
  */
 public final class Plant {
@@ -44,6 +49,7 @@ public final class Plant {
   private final SmartFactory smartFactory;
   private final MachineGateway machines;
   private OrderGenerator orders;
+  private final RouteMind routeMind;
   private final Shipping shipping = new Shipping();
   private final MemoryEventLog memoryLog;
   private PlantRules rules;
@@ -67,25 +73,28 @@ public final class Plant {
     var smartFactory = new SmartFactory(new MemoryOrderStore(work), new MemoryMachineStore(work), bus, work, time, ids,
         flowPilot::materials, flowPilot::transports, () -> machines[0]);
     machines[0] = new LocalMachines(smartFactory);
-    return new Plant(bus, time, seed, flowPilot, smartFactory, machines[0], rules, log);
+    var routeMind = RouteMind.inMemory(bus, work, time, ids, flowPilot.materials(), flowPilot.transports(),
+        smartFactory.eta(), smartFactory.catalog(), seed);
+    return new Plant(bus, time, seed, flowPilot, smartFactory, routeMind, machines[0], rules, log);
   }
 
   /** With existing facades: the server runtime passes its JDBC-backed modules and its machines (OPC UA). */
   public Plant(EventBus bus, SimTime time, long seed, FlowPilot flowPilot, SmartFactory smartFactory,
-               MachineGateway machines, PlantRules rules) {
-    this(bus, time, seed, flowPilot, smartFactory, machines, rules, null);
+               RouteMind routeMind, MachineGateway machines, PlantRules rules) {
+    this(bus, time, seed, flowPilot, smartFactory, routeMind, machines, rules, null);
   }
 
   private Plant(EventBus bus, SimTime time, long seed, FlowPilot flowPilot, SmartFactory smartFactory,
-                MachineGateway machines, PlantRules rules, MemoryEventLog memoryLog) {
+                RouteMind routeMind, MachineGateway machines, PlantRules rules, MemoryEventLog memoryLog) {
     this.bus = bus;
     this.time = time;
     this.flowPilot = flowPilot;
     this.smartFactory = smartFactory;
+    this.routeMind = routeMind;
     this.machines = machines;
     this.orders = new OrderGenerator(new SeededRandom(seed).fork("orders"));
     this.memoryLog = memoryLog;
-    this.scenarios = new Scenarios(smartFactory, flowPilot, bus);
+    this.scenarios = new Scenarios(smartFactory, flowPilot, routeMind, bus);
     machines.reset(seed);
     applyRules(rules);
   }
@@ -109,9 +118,14 @@ public final class Plant {
       time.advance(STEP_MS);
       long now = time.nowMs();
       phase("Aufträge", () -> orders.step(now, rules, smartFactory));
-      phase("Versand", () -> shipping.step(now, rules, flowPilot));
+      phase("Versand", () -> {
+        if (now % Shipping.CHECK_EVERY_MS == 0) shipping.step(now, rules, flowPilot, awaitedGoods());
+      });
       phase("Maschinen", () -> machines.step(STEP_MS));
       phase("FlowPilot", () -> flowPilot.step(STEP_MS));
+      phase("RouteMind", () -> {
+        if (rules.shipping()) routeMind.step();
+      });
       phase("Szenarien", () -> scenarios.step(now));
       for (int i = 0; i < extraPhases.size(); i++) phase(extraPhaseNames.get(i), extraPhases.get(i));
       phase("Zustellung", bus::retryFailed);
@@ -150,6 +164,7 @@ public final class Plant {
   public void reset(long seed) {
     synchronized (bus) {
       scenarios.reset();
+      routeMind.reset(seed);
       machines.reset(seed);
       orders = new OrderGenerator(new SeededRandom(seed).fork("orders"));
       applyRules(rules);
@@ -203,6 +218,21 @@ public final class Plant {
 
   public FlowPilot flowPilot() {
     return flowPilot;
+  }
+
+  /** Finished goods put away for a delivery that RouteMind has not reserved yet, per finished material. */
+  private Map<String, Integer> awaitedGoods() {
+    Map<String, Integer> keep = new HashMap<>(); // lookups only
+    for (Delivery d : routeMind.deliveries()) {
+      if (d.status() == DeliveryStatus.AWAITING_GOODS && d.storedQuantity() > 0 && d.transportId() == null) {
+        keep.merge(smartFactory.catalog().finishedMaterialId(d.productId()), d.storedQuantity(), Integer::sum);
+      }
+    }
+    return keep;
+  }
+
+  public RouteMind routeMind() {
+    return routeMind;
   }
 
   public SmartFactory smartFactory() {
@@ -260,7 +290,10 @@ public final class Plant {
       machineViews.sort((a, b) -> a.id().compareTo(b.id()));
       List<FlowPilot.VehicleView> vehicles = new ArrayList<>(flowPilot.vehicles());
       vehicles.sort((a, b) -> a.id().compareTo(b.id()));
-      return new PlantFrame(time.nowMs(), machineViews, machines.conveyors(), vehicles, stock, orderViews, transports);
+      List<PlantFrame.DockView> dock = new ArrayList<>();
+      for (Delivery d : routeMind.loadingZone()) dock.add(new PlantFrame.DockView(d.id(), d.status().name(), d.pallets()));
+      return new PlantFrame(time.nowMs(), machineViews, machines.conveyors(), vehicles, stock, orderViews, transports,
+          routeMind.trucks(), dock);
     }
   }
 

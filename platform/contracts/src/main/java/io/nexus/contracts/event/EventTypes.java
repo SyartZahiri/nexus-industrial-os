@@ -39,6 +39,12 @@ public final class EventTypes {
   public static final String OPCUA_CONNECTION = "opcua.connection";
   public static final String SCENARIO_STARTED = "scenario.started";
   public static final String SCENARIO_FINISHED = "scenario.finished";
+  public static final String DELIVERY_CREATED = "delivery.created";
+  public static final String DELIVERY_STATE = "delivery.state";
+  public static final String TOUR_PLANNED = "tour.planned";
+  public static final String TOUR_STATE = "tour.state";
+  public static final String VEHICLE_STATE = "vehicle.state";
+  public static final String DELIVERY_PLAN = "delivery.plan";
   /** A reasoned automatic decision, e.g. AGV selection or alternative machine. */
   public static final String DECISION = "decision";
   /** A consumer failed to process an event repeatedly and was given up on. */
@@ -74,6 +80,12 @@ public final class EventTypes {
     PAYLOADS.put(OPCUA_CONNECTION, Payloads.Note.class);
     PAYLOADS.put(SCENARIO_STARTED, Payloads.Note.class);
     PAYLOADS.put(SCENARIO_FINISHED, Payloads.Note.class);
+    PAYLOADS.put(DELIVERY_CREATED, Payloads.DeliveryCreated.class);
+    PAYLOADS.put(DELIVERY_STATE, Payloads.DeliveryStateChanged.class);
+    PAYLOADS.put(TOUR_PLANNED, Payloads.TourPlanned.class);
+    PAYLOADS.put(TOUR_STATE, Payloads.TourStateChanged.class);
+    PAYLOADS.put(VEHICLE_STATE, Payloads.VehicleStateChanged.class);
+    PAYLOADS.put(DELIVERY_PLAN, Payloads.DeliveryPlanComputed.class);
     PAYLOADS.put(DECISION, Payloads.Decision.class);
     PAYLOADS.put(SYSTEM_CONSUMER_FAILED, Payloads.ConsumerFailed.class);
   }

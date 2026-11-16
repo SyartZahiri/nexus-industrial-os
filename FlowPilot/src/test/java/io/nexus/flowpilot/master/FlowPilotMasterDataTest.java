@@ -17,8 +17,8 @@ class FlowPilotMasterDataTest {
 
   @Test
   void graphHasTheGeneratedSize() {
-    assertThat(FlowPilotMasterData.nodes()).hasSize(92);
-    assertThat(FlowPilotMasterData.edges()).hasSize(111);
+    assertThat(FlowPilotMasterData.nodes()).hasSize(96);  // 92 generated + 4 of the loading zone (V5)
+    assertThat(FlowPilotMasterData.edges()).hasSize(116); // 111 generated + 5
   }
 
   @Test

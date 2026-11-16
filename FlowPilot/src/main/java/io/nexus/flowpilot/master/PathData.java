@@ -1,4 +1,5 @@
-// Generated from V2__path_graph.sql; MasterDataMatchesDatabaseTest keeps both equal.
+// Generated from V2__path_graph.sql, plus the loading zone of V5__loading_zone.sql; MasterDataMatchesDatabaseTest
+// keeps both equal.
 package io.nexus.flowpilot.master;
 
 import io.nexus.flowpilot.master.FlowPilotMasterData.Edge;
@@ -101,7 +102,11 @@ final class PathData {
       new Node("D_CH5_1", 9.9, -0.9, false),
       new Node("D_CH5", 9.9, 0.0, true),
       new Node("D_CH5_3", 9.9, 0.9, false),
-      new Node("LX2_2", 8.0, 2.0, false));
+      new Node("LX2_2", 8.0, 2.0, false),
+      new Node("D_LZ_1", 23.2, 5.5, false),
+      new Node("D_LZ_2", 23.2, 14.0, false),
+      new Node("D_LZ", 22.0, 15.4, true),
+      new Node("D_LZ_4", 20.8, 14.0, false));
 
   static final List<Edge> EDGES = List.of(
       new Edge("J_-20_-3>LN_-19", "J_-20_-3", "LN_-19", 1.000),
@@ -214,5 +219,10 @@ final class PathData {
       new Edge("D_CH5_1>D_CH5", "D_CH5_1", "D_CH5", 0.900),
       new Edge("D_CH5>D_CH5_3", "D_CH5", "D_CH5_3", 0.900),
       new Edge("D_CH5_3>LX2_2", "D_CH5_3", "LX2_2", 2.195),
-      new Edge("J_14.6_3>J_14.6_-3", "J_14.6_3", "J_14.6_-3", 6.000));
+      new Edge("J_14.6_3>J_14.6_-3", "J_14.6_3", "J_14.6_-3", 6.000),
+      new Edge("J_20_3>D_LZ_1", "J_20_3", "D_LZ_1", 4.061),
+      new Edge("D_LZ_1>D_LZ_2", "D_LZ_1", "D_LZ_2", 8.500),
+      new Edge("D_LZ_2>D_LZ", "D_LZ_2", "D_LZ", 1.844),
+      new Edge("D_LZ>D_LZ_4", "D_LZ", "D_LZ_4", 1.844),
+      new Edge("D_LZ_4>LS_19.3", "D_LZ_4", "LS_19.3", 11.102));
 }

@@ -85,6 +85,14 @@ class MasterDataMatchesDatabaseTest {
   }
 
   @Test
+  void loadingZones() {
+    var db = jdbc.sql("select id, name, dock_node from loading_zone order by id collate \"C\"")
+        .query((rs, i) -> new FlowPilotMasterData.LoadingZone(rs.getString(1), rs.getString(2), rs.getString(3)))
+        .list();
+    assertThat(sorted(FlowPilotMasterData.loadingZones(), FlowPilotMasterData.LoadingZone::id)).isEqualTo(db);
+  }
+
+  @Test
   void agvs() {
     var db = jdbc.sql("select id, name, node_id from agv order by id collate \"C\"")
         .query((rs, i) -> new FlowPilotMasterData.AgvSeed(rs.getString(1), rs.getString(2), rs.getString(3))).list();
