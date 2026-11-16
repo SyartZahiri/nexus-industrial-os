@@ -16,10 +16,16 @@ export interface Roads {
 
 export type LngLat = [number, number];
 
-export async function loadRoads(): Promise<Roads> {
-  const res = await fetch(`${import.meta.env.BASE_URL}routemind/roads.json`);
-  if (!res.ok) throw new Error(`Strassendaten fehlen (HTTP ${res.status})`);
-  return (await res.json()) as Roads;
+let roads: Promise<Roads> | null = null;
+
+/** Loaded once per page; every caller gets the same object. A failed load is tried again on the next call. */
+export function loadRoads(): Promise<Roads> {
+  roads ??= fetch(`${import.meta.env.BASE_URL}routemind/roads.json`).then(async (res) => {
+    if (!res.ok) throw new Error(`Strassendaten fehlen (HTTP ${res.status})`);
+    return (await res.json()) as Roads;
+  });
+  roads.catch(() => (roads = null));
+  return roads;
 }
 
 export function decodePolyline(text: string): LngLat[] {
