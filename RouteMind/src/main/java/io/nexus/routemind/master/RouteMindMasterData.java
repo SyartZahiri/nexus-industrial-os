@@ -16,8 +16,8 @@ public final class RouteMindMasterData {
   public record Freight(String productId, int kgPerUnit, int unitsPerPallet) {}
 
   private static final List<VehicleSeed> VEHICLES = List.of(
-      new VehicleSeed("LKW-1", "LKW 7,5 t", 3000, 12, 1.40, 75),
-      new VehicleSeed("LKW-2", "LKW 7,5 t", 3000, 12, 1.40, 75),
+      new VehicleSeed("LKW-1", "LKW 7,5 t", 3000, 15, 1.40, 75),
+      new VehicleSeed("LKW-2", "LKW 7,5 t", 3000, 15, 1.40, 75),
       new VehicleSeed("LW-1", "Lieferwagen", 1000, 4, 0.70, 60),
       new VehicleSeed("LW-2", "Lieferwagen", 1000, 4, 0.70, 60));
 

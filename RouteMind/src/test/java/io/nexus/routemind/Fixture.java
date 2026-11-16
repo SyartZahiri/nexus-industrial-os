@@ -19,13 +19,16 @@ import io.nexus.contracts.port.ProductionEta;
 import io.nexus.contracts.port.TransportService;
 import io.nexus.contracts.sim.SimTime;
 import io.nexus.contracts.state.OrderStatus;
+import io.nexus.routemind.optimize.RouteOptimizer;
 import io.nexus.routemind.optimize.SavingsHeuristic;
+import io.nexus.routemind.store.RouteStore;
 import io.nexus.routemind.store.Delivery;
 import io.nexus.routemind.store.memory.MemoryRouteStore;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 final class Fixture {
   static final long MIN = 60_000;
@@ -41,6 +44,10 @@ final class Fixture {
   final RouteMind rm;
 
   Fixture(long seed) {
+    this(seed, new SavingsHeuristic(), MemoryRouteStore::new);
+  }
+
+  Fixture(long seed, RouteOptimizer optimizer, Function<MemoryUnitOfWork, RouteStore> store) {
     MaterialService materials = new MaterialService() {
       @Override public ReservationResult reserve(ReservationRequest r) {
         var line = r.lines().get(0);
@@ -66,8 +73,8 @@ final class Fixture {
       @Override public List<MaterialDemand> demandFor(String productId, int quantity) { return List.of(); }
       @Override public String finishedMaterialId(String productId) { return "FG-" + productId; }
     };
-    rm = new RouteMind(new MemoryRouteStore(work), bus, work, time, ids, materials, transports, eta, catalog,
-        new SavingsHeuristic(), seed);
+    rm = new RouteMind(store.apply(work), bus, work, time, ids, materials, transports, eta, catalog,
+        optimizer, seed);
   }
 
   void emit(String type, String orderId, Payload p) {

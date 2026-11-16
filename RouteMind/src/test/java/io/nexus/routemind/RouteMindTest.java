@@ -163,17 +163,20 @@ class RouteMindTest {
         .orElseThrow().arrivedAtMs()).isEqualTo(arrived);
     List<Delivery> rest = f.rm.deliveries().stream().filter(d -> d != null && !d.id().equals(first.id())).toList();
     assertThat(rest).allSatisfy(d -> {
-      assertThat(d.status()).isEqualTo(DeliveryStatus.FAILED);
+      // the breakdown replans the open stops at once, so they may already be back in READY_TO_LOAD
+      assertThat(d.status()).isIn(DeliveryStatus.FAILED, DeliveryStatus.READY_TO_LOAD);
       assertThat(d.failures()).isEqualTo(1);
     });
+    assertThat(f.events(EventTypes.DELIVERY_STATE)).anySatisfy(e ->
+        assertThat(((Payloads.DeliveryStateChanged) e.payload()).to()).isEqualTo(DeliveryStatus.FAILED));
 
     long nextPlan = (f.time.nowMs() / RouteMind.WAVE_MS + 1) * RouteMind.WAVE_MS;
     f.advanceTo(nextPlan + 100);
     for (Delivery d : rest) {
       Delivery now = f.rm.deliveryOfOrder(d.orderId());
-      assertThat(now.status()).isEqualTo(DeliveryStatus.READY_TO_LOAD);
-      assertThat(now.tourId()).as("planned again").isNotNull();
-      assertThat(tourOf(f, now).status()).isEqualTo(TourStatus.PLANNED);
+      assertThat(now.status()).isIn(DeliveryStatus.READY_TO_LOAD, DeliveryStatus.LOADED, DeliveryStatus.IN_TRANSIT,
+          DeliveryStatus.DELIVERED);
+      assertThat(now.tourId()).as("planned again on a new tour").isNotNull().isNotEqualTo(tour.id());
     }
     assertThat(f.rm.deliveryOfOrder(first.orderId()).status()).isEqualTo(DeliveryStatus.DELIVERED);
   }
@@ -268,6 +271,21 @@ class RouteMindTest {
         assertThat(((Payloads.TourStateChanged) e.payload()).to()).isEqualTo(TourStatus.INTERRUPTED));
   }
 
+  /** Across the night (no waves 22:00–06:00) no delivery starves: by the evening of day 2 none of day 1 still waits. */
+  @Test
+  void noDeliveryOfTheFirstDayIsLeftWaiting() {
+    var f = new Fixture(11);
+    // an order every 15 min, about what the plant produces (PlantLongRunTest), also through the night
+    randomRun(f, 11, 38 * 60 * MIN, 15 * MIN, () -> {}); // 06:00 day 1 to 20:00 day 2
+    for (Delivery d : f.rm.deliveries()) {
+      if (d.createdAtMs() >= 24 * 60 * MIN) continue; // orders of day 2 may still be on their way
+      boolean givenUp = d.status() == DeliveryStatus.FAILED && d.failures() >= RouteMind.MAX_ATTEMPTS;
+      boolean underWay = d.status() == DeliveryStatus.LOADED || d.status() == DeliveryStatus.IN_TRANSIT;
+      assertThat(d.status() == DeliveryStatus.DELIVERED || d.status() == DeliveryStatus.CANCELLED || givenUp || underWay)
+          .as("no delivery of day 1 still waits: " + d.id() + " created " + d.createdAtMs() / MIN + " min, " + d.status()).isTrue();
+    }
+  }
+
   @Test
   void sameSeedSameEvents() {
     List<String> first = new ArrayList<>();
@@ -280,8 +298,12 @@ class RouteMindTest {
     assertThat(second).isEqualTo(first);
   }
 
-  /** Orders every 6 min; putaway after 20..50 min; FlowPilot provides 2 min after RouteMind asked for the goods. */
+  /** Orders every 6 min (or orderEveryMs); putaway after 20..50 min; FlowPilot provides 2 min after the request. */
   private static void randomRun(Fixture f, long seed, long untilMs, Runnable check) {
+    randomRun(f, seed, untilMs, 6 * MIN, check);
+  }
+
+  private static void randomRun(Fixture f, long seed, long untilMs, long orderEveryMs, Runnable check) {
     var r = new SeededRandom(seed);
     String[] products = {"GH200", "AW50", "FP12", "MT7"};
     record Pending(long atMs, String orderId, int qty, boolean provide) {}
@@ -289,7 +311,7 @@ class RouteMindTest {
     int n = 0;
     while (f.time.nowMs() < untilMs) {
       long now = f.time.nowMs();
-      if (now % (6 * MIN) == 0) {
+      if (now % orderEveryMs == 0) {
         String id = String.format("PO-%04d", ++n);
         int qty = 3 + r.nextInt(8);
         f.order(id, products[r.nextInt(4)], qty, Priority.NORMAL, now + (45 + r.nextInt(46)) * MIN);

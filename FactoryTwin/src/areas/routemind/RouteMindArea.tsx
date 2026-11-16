@@ -54,7 +54,7 @@ const planColumns: Column<RmPlan>[] = [
     render: (p) => `${nf(p.optimized.km, 1)} km · ${nf(p.optimized.driveMinutes)} min · ${nf(p.optimized.cost, 2)} CHF · ${nf(p.optimized.lateMinutes)} min spät` },
   { key: 'delta', label: 'Gegen vorigen Plan', value: (p) => planDelta(p)?.cost ?? null, align: 'right', mono: true,
     render: (p) => { const d = planDelta(p); return d ? `${d.km >= 0 ? '+' : ''}${nf(d.km, 1)} km · ${d.cost >= 0 ? '+' : ''}${nf(d.cost, 2)} CHF` : '–'; } },
-  { key: 'open', label: 'Nicht planbar', value: (p) => p.unassigned.length, render: (p) => (p.unassigned.length ? p.unassigned.join('; ') : '–') },
+  { key: 'open', label: 'Offen oder verspätet', value: (p) => p.unassigned.length, render: (p) => (p.unassigned.length ? p.unassigned.join('; ') : '–') },
 ];
 
 function VehicleActions({ v }: { v: RmVehicle }) {

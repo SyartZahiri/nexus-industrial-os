@@ -15,8 +15,8 @@ create table delivery_vehicle (
   version         int    not null default 0
 );
 insert into delivery_vehicle (id, name, max_kg, max_pallets) values
-  ('LKW-1', 'LKW 7,5 t', 3000, 12),
-  ('LKW-2', 'LKW 7,5 t', 3000, 12),
+  ('LKW-1', 'LKW 7,5 t', 3000, 15),
+  ('LKW-2', 'LKW 7,5 t', 3000, 15),
   ('LW-1', 'Lieferwagen', 1000, 4),
   ('LW-2', 'Lieferwagen', 1000, 4);
 

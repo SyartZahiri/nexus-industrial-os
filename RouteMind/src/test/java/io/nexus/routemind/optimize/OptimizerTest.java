@@ -80,8 +80,10 @@ public class OptimizerTest {
     var p = new Problem(DEPART, 0, fleet(end), List.of(tooHeavy, tooLate, afterShift, fine), ROADS);
     var s = new SavingsHeuristic().solve(p);
     assertThat(s.unassigned()).containsExactlyInAnyOrder(new Unassigned("HEAVY", Reasons.CAPACITY),
-        new Unassigned("LATE", Reasons.WINDOW), new Unassigned("SHIFT", Reasons.SHIFT));
-    assertThat(s.routes()).hasSize(1);
+        new Unassigned("SHIFT", Reasons.SHIFT));
+    // a window that cannot be met is soft: the job is planned (and late), and reported as late
+    assertThat(s.routes()).flatExtracting(Route::jobIds).containsExactlyInAnyOrder("LATE", "OK");
+    assertThat(Feasibility.split(p).late()).containsExactly(new Unassigned("LATE", Reasons.WINDOW));
     var none = new Problem(DEPART, 0, List.of(), List.of(fine), ROADS);
     assertThat(new SavingsHeuristic().solve(none).unassigned()).containsExactly(new Unassigned("OK", Reasons.SHIFT));
   }

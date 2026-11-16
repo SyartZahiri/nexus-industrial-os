@@ -26,6 +26,8 @@ import io.nexus.contracts.state.VehicleStatus;
 import io.nexus.routemind.master.Roads;
 import io.nexus.routemind.master.RouteMindMasterData;
 import io.nexus.routemind.optimize.Evaluation;
+import io.nexus.routemind.optimize.Feasibility;
+import io.nexus.routemind.optimize.Reasons;
 import io.nexus.routemind.optimize.Job;
 import io.nexus.routemind.optimize.Matrix;
 import io.nexus.routemind.optimize.NearestNeighbour;
@@ -108,6 +110,7 @@ public final class RouteMind {
   private SeededRandom random;
   private double breakdownPerLeg = 0.01;
   private boolean replanNeeded;
+  private long pendingWave = Long.MIN_VALUE;
   private String replanReason;
 
   public RouteMind(RouteStore store, EventBus bus, UnitOfWork work, SimTime time, IdSource ids,
@@ -233,21 +236,21 @@ public final class RouteMind {
     synchronized (lock) {
       long now = time.nowMs();
       if (now % PROVISION_EVERY_MS == 0) provision();
+      drive(now);    // first: a vehicle back in this step can be loaded in this step
+      repairs(now);
+      // level-triggered, once a second: a wave action that failed (e.g. a database hiccup) is made good a second
+      // later instead of waiting for a tick that has passed
+      if (now % LOAD_EVERY_MS == 0) waves(now);
       long intoWave = Math.floorMod(now, WAVE_MS);
-      if (intoWave == 0) {
-        depart(now);
-        long next = now + WAVE_MS;
-        if (inShift(next)) work.inNewTransaction(() -> plan(next, "Wellenplanung", null));
-      } else if (intoWave == WAVE_MS - LOADING_LEAD_MS) {
-        startLoading(now + LOADING_LEAD_MS);
+      long wave = now - intoWave + WAVE_MS; // the next departure
+      if (intoWave == 0) pendingWave = wave; // the plan of the next wave is due now
+      if (pendingWave == wave && intoWave < WAVE_MS - LOADING_LEAD_MS) {
+        if (inShift(wave)) work.inNewTransaction(() -> plan(wave, "Wellenplanung", null));
+        pendingWave = Long.MIN_VALUE; // only after the plan committed: a failed plan stays due for the next step
       } else if (replanNeeded && intoWave < WAVE_MS - LOADING_LEAD_MS) {
-        long wave = now - intoWave + WAVE_MS;
         String reason = replanReason;
         work.inNewTransaction(() -> replan(wave, reason));
       }
-      if (intoWave >= WAVE_MS - LOADING_LEAD_MS && now % LOAD_EVERY_MS == 0) load();
-      drive(now);
-      repairs(now);
     }
   }
 
@@ -319,10 +322,12 @@ public final class RouteMind {
         candidates.add(d);
       }
     }
-    if (candidates.isEmpty()) return;
+    if (candidates.isEmpty() || usable.isEmpty()) return; // nobody free: the goods wait for the next wave
+    List<Delivery> waiting = new ArrayList<>();
+    candidates = oldestFirst(candidates, usable, waiting);
     Problem p = problem(wave, usable, candidates);
     Solution base = new NearestNeighbour().solve(p);
-    Solution best = optimizer.solve(p);
+    Solution best = checked(p, optimizer.solve(p));
     String planId = ids.next("RP");
     List<String> tourIds = new ArrayList<>();
     for (Route r : best.routes()) {
@@ -345,6 +350,10 @@ public final class RouteMind {
     }
     List<String> open = new ArrayList<>();
     for (Unassigned u : best.unassigned()) open.add(u.jobId() + ": " + u.reason());
+    for (Delivery d : waiting) open.add(d.id() + ": wartet auf ein freies Fahrzeug");
+    for (Unassigned u : Feasibility.split(p).late()) {
+      if (!isUnassigned(best, u.jobId())) open.add(u.jobId() + ": " + u.reason() + ", wird verspätet geliefert");
+    }
     var record = new PlanRecord(planId, wave, now, trigger, best.solver(), figures(Evaluation.of(p, base)),
         figures(Evaluation.of(p, best)), open, tourIds, replaced);
     plans.add(0, record);
@@ -352,6 +361,84 @@ public final class RouteMind {
     bus.publish(EventTypes.DELIVERY_PLAN, SOURCE, open.isEmpty() ? Severity.INFO : Severity.WARNING, null,
         new Payloads.DeliveryPlanComputed(planId, best.solver(), wave, trigger, record.baseline(), record.optimized(),
             open));
+  }
+
+/**
+   * Spec 15a: capacity and shift are hard rules of the core, whatever a solver returned. A route on an unknown or
+   * already used vehicle, over its weight or pallets, or back after its shift is dropped with a decision; its jobs
+   * and jobs a solver left out altogether are reported as not planned.
+   */
+  private Solution checked(Problem p, Solution s) {
+    List<Route> ok = new ArrayList<>();
+    List<Unassigned> unassigned = new ArrayList<>(s.unassigned());
+    List<String> planned = new ArrayList<>();
+    List<String> usedTrucks = new ArrayList<>();
+    for (Route r : s.routes()) {
+      Truck truck = null;
+      for (Truck t : p.trucks()) if (t.id().equals(r.truckId())) truck = t;
+      List<Job> jobs = new ArrayList<>();
+      boolean clean = true;
+      for (String id : r.jobIds()) {
+        Job job = null;
+        for (Job j : p.jobs()) if (j.id().equals(id)) job = j;
+        if (job == null || planned.contains(id) || jobs.contains(job)) clean = false;
+        else jobs.add(job);
+      }
+      String reason = null;
+      if (truck == null || usedTrucks.contains(truck.id())) {
+        reason = Reasons.SHIFT;
+      } else {
+        var f = Evaluation.route(p, truck, jobs);
+        if (!clean || f.weightKg() > truck.maxKg() || f.pallets() > truck.maxPallets()) reason = Reasons.CAPACITY;
+        else if (f.returnMs() > truck.endMs()) reason = Reasons.SHIFT;
+      }
+      if (reason == null) {
+        ok.add(r);
+        usedTrucks.add(truck.id());
+        planned.addAll(r.jobIds());
+        continue;
+      }
+      for (Job j : jobs) unassigned.add(new Unassigned(j.id(), reason));
+      bus.publish(EventTypes.DECISION, SOURCE, Severity.WARNING, null, new Payloads.Decision("Tour für " + r.truckId(),
+          "verworfen", r.jobIds(), "Route des Lösers " + s.solver() + " verletzt "
+              + (reason.equals(Reasons.CAPACITY) ? "die Kapazität" : "die Schicht")));
+    }
+    for (Job j : p.jobs()) {
+      if (!planned.contains(j.id()) && !isUnassigned(new Solution(s.solver(), ok, unassigned), j.id())) {
+        unassigned.add(new Unassigned(j.id(), Reasons.CAPACITY));
+      }
+    }
+    return new Solution(s.solver(), ok, unassigned);
+  }
+
+  private static boolean isUnassigned(Solution s, String jobId) {
+    for (Unassigned u : s.unassigned()) if (u.jobId().equals(jobId)) return true;
+    return false;
+  }
+
+/**
+   * Fair share of a wave: the deliveries whose window closes first, as many as the free vehicles carry in pallets.
+   * Without it a solver serves the cheapest stops of a backlog and a far customer waits for good. The rest go into
+   * waiting and are offered again with the next wave. Returns the chosen ones in id order (Problem expects it).
+   */
+  private static List<Delivery> oldestFirst(List<Delivery> candidates, List<VehicleRecord> usable,
+                                            List<Delivery> waiting) {
+    int budget = 0;
+    for (VehicleRecord v : usable) budget += RouteMindMasterData.vehicle(v.id()).maxPallets();
+    List<Delivery> byWindow = new ArrayList<>(candidates);
+    byWindow.sort((a, b) -> a.latestMs() != b.latestMs() ? Long.compare(a.latestMs(), b.latestMs())
+        : a.id().compareTo(b.id()));
+    List<Delivery> chosen = new ArrayList<>();
+    for (Delivery d : byWindow) {
+      if (d.pallets() <= budget) {
+        chosen.add(d);
+        budget -= d.pallets();
+      } else {
+        waiting.add(d);
+      }
+    }
+    chosen.sort((a, b) -> a.id().compareTo(b.id()));
+    return chosen;
   }
 
   private long expectedReady(Delivery d, long now) {
@@ -398,16 +485,34 @@ public final class RouteMind {
 
   // ---- loading and departure -------------------------------------------------------------------------------
 
-  private void startLoading(long wave) {
+/**
+   * Due tours, every second: PLANNED tours start loading from LOADING_LEAD_MS before departure once their vehicle is
+   * back; at departure LOADING tours leave and PLANNED ones are dropped. One failing tour does not hold up the others;
+   * the first failure is passed on after all were tried, so the plant reports it.
+   */
+  private void waves(long now) {
+    RuntimeException failed = null;
     for (Tour t : store.tours()) {
-      if (t.departAtMs() != wave || t.status() != TourStatus.PLANNED) continue;
-      VehicleRecord v = vehicle(t.vehicleId());
-      if (v.status() != VehicleStatus.AVAILABLE) continue; // not back: the tour is dropped at departure
-      work.inNewTransaction(() -> {
-        moveTour(t, TourStatus.LOADING, "Verladung beginnt");
-        moveVehicle(v, v.withTour(t.id()).withStatus(VehicleStatus.LOADING));
-      });
+      try {
+        if (t.departAtMs() <= now && t.status() == TourStatus.PLANNED) {
+          work.inNewTransaction(() -> drop(store.tour(t.id()).orElseThrow(),
+              "Fahrzeug " + t.vehicleId() + " nicht rechtzeitig bereit"));
+        } else if (t.departAtMs() <= now && t.status() == TourStatus.LOADING) {
+          work.inNewTransaction(() -> start(store.tour(t.id()).orElseThrow()));
+        } else if (t.departAtMs() - LOADING_LEAD_MS <= now && t.status() == TourStatus.PLANNED) {
+          VehicleRecord v = vehicle(t.vehicleId());
+          if (v.status() != VehicleStatus.AVAILABLE) continue; // not back yet
+          work.inNewTransaction(() -> {
+            moveTour(store.tour(t.id()).orElseThrow(), TourStatus.LOADING, "Verladung beginnt");
+            moveVehicle(v, v.withTour(t.id()).withStatus(VehicleStatus.LOADING));
+          });
+        }
+      } catch (RuntimeException e) {
+        if (failed == null) failed = e;
+      }
     }
+    load();
+    if (failed != null) throw failed;
   }
 
   /** Confirms the loading of every delivery whose goods are at the loading zone (Integration 3). */
@@ -420,18 +525,6 @@ public final class RouteMind {
           work.inNewTransaction(() -> move(store.delivery(d.id()).orElseThrow(), DeliveryStatus.LOADED,
               "Verladung auf " + t.vehicleId() + " bestätigt"));
         }
-      }
-    }
-  }
-
-  private void depart(long wave) {
-    for (Tour t : store.tours()) {
-      if (t.departAtMs() != wave) continue;
-      if (t.status() == TourStatus.PLANNED) {
-        work.inNewTransaction(() -> drop(store.tour(t.id()).orElseThrow(),
-            "Fahrzeug " + t.vehicleId() + " nicht rechtzeitig bereit"));
-      } else if (t.status() == TourStatus.LOADING) {
-        work.inNewTransaction(() -> start(store.tour(t.id()).orElseThrow()));
       }
     }
   }
@@ -549,6 +642,7 @@ public final class RouteMind {
         Delivery failed = move(d, DeliveryStatus.FAILED,
             reason + ", Zustellversuch " + (d.failures() + 1) + " gescheitert");
         failed = store.updateDelivery(failed.withFailure());
+        if (failed.failures() < MAX_ATTEMPTS) requestReplan("Ausfall " + v.id());
         if (failed.failures() >= MAX_ATTEMPTS) {
           bus.publish(EventTypes.DECISION, SOURCE, Severity.WARNING, d.orderId(), new Payloads.Decision(d.id(),
               "aufgegeben", List.of(), "Nach " + MAX_ATTEMPTS + " Versuchen keine weitere Zustellung"));
@@ -624,6 +718,7 @@ public final class RouteMind {
       plans.clear();
       replanNeeded = false;
       replanReason = null;
+      pendingWave = Long.MIN_VALUE;
       random = new SeededRandom(seed).fork("routemind");
     }
   }
