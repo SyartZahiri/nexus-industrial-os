@@ -244,6 +244,25 @@ class ScenariosTest {
   }
 
   @Test
+  void aProductionDelayEndsEvenIfItsMachineWasRestartedByHand() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    assertThat(start(p, "F")).containsEntry("ok", true);
+    String machine = null;
+    for (long t = 0; t < 6 * 60 * MIN && machine == null; t += MIN) {
+      p.advance(MIN);
+      for (String s : texts(runs(p).get(0))) {
+        var m = java.util.regex.Pattern.compile("; (\\S+) angehalten").matcher(s);
+        if (m.find()) machine = m.group(1);
+      }
+    }
+    assertThat(machine).as("F stopped a machine").isNotNull();
+    p.smartFactory().startMachine(machine); // someone restarts it before the scenario ends
+    var run = untilDone(p, 6 * 60 * MIN);
+    assertThat((String) run.get("state")).as("the run ends instead of hanging in its teardown")
+        .isIn("PASSED", "FAILED");
+  }
+
+  @Test
   void aProductionDelayKeepsTheUnfinishedGoodsOffTheTour() {
     Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
     assertThat(start(p, "F")).containsEntry("ok", true);

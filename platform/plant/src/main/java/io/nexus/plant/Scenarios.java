@@ -138,6 +138,7 @@ final class Scenarios {
       if (!begun && !run.done()) { // whatever happened, never leave an active run that blocks every start
         run.state = State.FAILED;
         run.finishedAtMs = now;
+        undo(run, now);
       }
     }
     return run.runId;
@@ -155,6 +156,8 @@ final class Scenarios {
   }
 
   void reset() {
+    Run active = active();
+    if (active != null) undo(active, active.startedAtMs);
     runs.clear();
     counter = 0;
   }
@@ -197,12 +200,22 @@ final class Scenarios {
   }
 
   private void finish(Run run, long now, boolean passed, String text) {
-    run.end();
     run.state = passed ? State.PASSED : State.FAILED;
     run.finishedAtMs = now;
     note(run, now, text);
+    undo(run, now);
     bus.publish(EventTypes.SCENARIO_FINISHED, "scenario", passed ? Severity.SUCCESS : Severity.WARNING, run.orderId,
         new Payloads.Note(run.def.id() + " " + run.def.title() + ": " + text));
+  }
+
+  /** Takes the run's intervention back; a failure here is noted on the run and never keeps it from ending. */
+  private static void undo(Run run, long now) {
+    try {
+      run.end();
+    } catch (RuntimeException e) {
+      String type = e.getClass().getName();
+      note(run, now, "Eingriff nicht zurückgenommen (" + type.substring(type.lastIndexOf('.') + 1) + ")");
+    }
   }
 
   abstract class Run {
@@ -530,7 +543,11 @@ final class Scenarios {
 
     @Override
     void end() {
-      if (machineId != null) sf.startMachine(machineId);
+      String m = machineId;
+      machineId = null; // undone once, never again
+      if (m == null) return;
+      // only what the scenario left: a machine someone started (or that went into a fault) stays as it is
+      for (MachineRecord r : sf.machines()) if (r.id().equals(m) && r.status() == MachineStatus.STOPPED) sf.startMachine(m);
     }
 
     @Override
