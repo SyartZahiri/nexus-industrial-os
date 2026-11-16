@@ -65,7 +65,7 @@ GitHub Actions führt alle vier aus, dazu einen Lauf von Docker Compose (`.githu
 
 ## Sicherheit
 
-Die API hat keine Anmeldung und keine Benutzerkonten. Sie ist für den lokalen Betrieb und die Vorführung gedacht und darf so nicht offen ins Internet gestellt werden. Der Server bedient nur `localhost` und die Hosts in `nexus.allowed-hosts` und nimmt Befehle nur von den Origins in `nexus.ws.allowed-origins` an. Der OPC-UA-Server hört nur auf `127.0.0.1`.
+Die API hat keine Anmeldung und keine Benutzerkonten. Sie ist für den lokalen Betrieb und die Vorführung gedacht und darf so nicht offen ins Internet gestellt werden. Der Server bedient nur `localhost` und die Hosts in `nexus.allowed-hosts`. Befehle nimmt er von seiner eigenen Seite, von den Origins in `nexus.ws.allowed-origins` und von Anfragen ohne Origin an (curl, Programme auf demselben Rechner); Browser senden bei fremden Seiten immer einen Origin. Docker Compose bindet die Oberfläche deshalb nur an `127.0.0.1`, nicht ans lokale Netz. Der OPC-UA-Server hört nur auf `127.0.0.1`.
 
 ## Aufbau
 
