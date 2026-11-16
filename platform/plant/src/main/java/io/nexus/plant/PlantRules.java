@@ -9,7 +9,8 @@ import io.nexus.smartfactory.planning.DispatchRule;
  *
  * @param autoOrders          customers place orders by themselves, one every autoOrderIntervalMs
  * @param maxOpenOrders       no automatic order while this many are open
- * @param shipping            finished goods leave the warehouse once it is more than 70 % full (until RouteMind)
+ * @param shipping            RouteMind delivers finished goods to the customers (Spec 15a) and goods no delivery needs leave a
+ *                            store over 70 % full; off: everything stays in store
  */
 public record PlantRules(SimRules machines, boolean autoOrders, long autoOrderIntervalMs, int maxOpenOrders,
                          boolean shipping, DispatchRule dispatchRule) {

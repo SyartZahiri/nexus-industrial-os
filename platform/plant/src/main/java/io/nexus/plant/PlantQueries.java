@@ -1,10 +1,16 @@
 package io.nexus.plant;
 
 import io.nexus.contracts.DomainException;
+import io.nexus.contracts.event.Payloads;
 import io.nexus.contracts.json.JsonReader;
 import io.nexus.contracts.json.JsonWriter;
 import io.nexus.contracts.state.MachineStatus;
 import io.nexus.flowpilot.master.FlowPilotMasterData;
+import io.nexus.routemind.RouteMind;
+import io.nexus.routemind.master.Roads;
+import io.nexus.routemind.master.RouteMindMasterData;
+import io.nexus.routemind.store.Delivery;
+import io.nexus.routemind.store.Tour;
 import io.nexus.smartfactory.analytics.Kpis;
 import io.nexus.smartfactory.master.SmartFactoryMasterData;
 import io.nexus.smartfactory.planning.Plan;
@@ -37,6 +43,7 @@ public final class PlantQueries {
         case "network" -> network(plant);
         case "kpiSeries" -> kpiSeries(plant, q);
         case "scenarios" -> plant.scenariosJson();
+        case "routemind" -> routeMind(plant);
         default -> throw DomainException.invalid("Unbekannte Abfrage");
       };
       return new JsonWriter().beginObject().name("ok").value(true).name("result").raw(result).endObject().toString();
@@ -81,6 +88,74 @@ public final class PlantQueries {
         .name("autoOrderIntervalMinutes").value(r.autoOrderIntervalMs() / MINUTE_MS)
         .name("maxOpenOrders").value(r.maxOpenOrders()).name("shipping").value(r.shipping())
         .name("dispatchRule").value(r.dispatchRule().name()).endObject().toString();
+  }
+
+  private static String routeMind(Plant plant) {
+    RouteMind rm = plant.routeMind();
+    var w = new JsonWriter().beginObject().name("attribution").value(Roads.attribution());
+    w.name("deliveries").beginArray();
+    for (Delivery d : rm.deliveries()) {
+      w.beginObject().name("id").value(d.id()).name("orderId").value(d.orderId()).name("customerId").value(d.customerId())
+          .name("customerName").value(Roads.place(d.customerId()).name()).name("productId").value(d.productId())
+          .name("quantity").value(d.quantity()).name("storedQuantity").value(d.storedQuantity())
+          .name("weightKg").value(d.weightKg()).name("pallets").value(d.pallets())
+          .name("priority").value(d.priority().name()).name("earliestMs").value(d.earliestMs())
+          .name("latestMs").value(d.latestMs()).name("status").value(d.status().name()).name("tourId").value(d.tourId());
+      nullable(w.name("plannedArrivalMs"), d.plannedArrivalMs());
+      nullable(w.name("deliveredAtMs"), d.deliveredAtMs());
+      w.name("failures").value(d.failures()).endObject();
+    }
+    w.endArray().name("tours").beginArray();
+    for (Tour t : rm.tours()) {
+      w.beginObject().name("id").value(t.id()).name("planId").value(t.planId()).name("vehicleId").value(t.vehicleId())
+          .name("departAtMs").value(t.departAtMs()).name("status").value(t.status().name()).name("km").value(t.km())
+          .name("cost").value(t.cost());
+      nullable(w.name("startedAtMs"), t.startedAtMs());
+      nullable(w.name("endedAtMs"), t.endedAtMs());
+      w.name("stops").beginArray();
+      for (Tour.Stop s : t.stops()) {
+        w.beginObject().name("seq").value(s.seq()).name("deliveryId").value(s.deliveryId())
+            .name("customerId").value(s.customerId()).name("plannedArrivalMs").value(s.plannedArrivalMs());
+        nullable(w.name("arrivedAtMs"), s.arrivedAtMs());
+        w.endObject();
+      }
+      w.endArray().endObject();
+    }
+    w.endArray().name("vehicles").beginArray();
+    for (RouteMind.TruckView v : rm.trucks()) {
+      var seed = RouteMindMasterData.vehicle(v.id());
+      w.beginObject().name("id").value(v.id()).name("name").value(v.name()).name("status").value(v.status().name())
+          .name("tourId").value(v.tourId()).name("from").value(v.from()).name("to").value(v.to())
+          .name("progress").value(v.progress()).name("maxKg").value(seed.maxKg())
+          .name("maxPallets").value(seed.maxPallets()).endObject();
+    }
+    w.endArray().name("plans").beginArray();
+    for (RouteMind.PlanRecord p : rm.plans()) {
+      w.beginObject().name("planId").value(p.planId()).name("waveAtMs").value(p.waveAtMs()).name("atMs").value(p.atMs())
+          .name("trigger").value(p.trigger()).name("solver").value(p.solver());
+      figures(w.name("baseline"), p.baseline());
+      figures(w.name("optimized"), p.optimized());
+      figures(w.name("replaced"), p.replaced());
+      w.name("unassigned").beginArray();
+      for (String u : p.unassigned()) w.value(u);
+      w.endArray().name("tourIds").beginArray();
+      for (String id : p.tourIds()) w.value(id);
+      w.endArray().endObject();
+    }
+    var k = rm.kpis();
+    w.endArray().name("kpis").beginObject().name("activeTours").value(k.activeTours())
+        .name("utilization").value(k.utilization()).name("delivered").value(k.delivered()).name("onTime").value(k.onTime())
+        .name("avgDelayMinutes").value(k.avgDelayMinutes()).name("failed").value(k.failed()).name("open").value(k.open())
+        .name("km").value(k.km()).name("cost").value(k.cost()).endObject();
+    return w.endObject().toString();
+  }
+
+  private static void figures(JsonWriter w, Payloads.PlanFigures f) {
+    if (f == null) {
+      w.nullValue();
+      return;
+    }
+    PlantJson.figures(w, f);
   }
 
   private static JsonWriter nullable(JsonWriter w, Long v) {

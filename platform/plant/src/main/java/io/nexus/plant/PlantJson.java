@@ -6,6 +6,7 @@ import io.nexus.contracts.event.Payload;
 import io.nexus.contracts.event.Payloads;
 import io.nexus.contracts.json.JsonWriter;
 import io.nexus.flowpilot.FlowPilot.VehicleView;
+import io.nexus.routemind.RouteMind;
 import io.nexus.sim.Simulation;
 import java.util.List;
 
@@ -61,6 +62,17 @@ public final class PlantJson {
       w.beginObject().name("id").value(t.id()).name("kind").value(t.kind()).name("orderId").value(t.orderId())
           .name("materialId").value(t.materialId()).name("quantity").value(t.quantity()).name("status").value(t.status())
           .name("agvId").value(t.agvId()).name("from").value(t.from()).name("to").value(t.to()).endObject();
+    }
+    w.endArray().name("trucks").beginArray();
+    for (RouteMind.TruckView t : f.trucks()) {
+      w.beginObject().name("id").value(t.id()).name("name").value(t.name()).name("status").value(t.status().name())
+          .name("tourId").value(t.tourId()).name("from").value(t.from()).name("to").value(t.to())
+          .name("progress").value(t.progress()).endObject();
+    }
+    w.endArray().name("dock").beginArray();
+    for (PlantFrame.DockView d : f.dock()) {
+      w.beginObject().name("deliveryId").value(d.deliveryId()).name("status").value(d.status())
+          .name("pallets").value(d.pallets()).endObject();
     }
     return w.endArray().endObject().toString();
   }

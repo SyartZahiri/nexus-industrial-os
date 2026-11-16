@@ -76,6 +76,10 @@ public final class PlantCommands {
       case "edgeBlock" -> fp.setEdgeBlocked(text(c, "edgeId"), true);
       case "edgeUnblock" -> fp.setEdgeBlocked(text(c, "edgeId"), false);
       case "stockReceipt" -> fp.receive(text(c, "materialId"), text(c, "locationId"), whole(c, "quantity"));
+      case "vehicleBreakdown" -> plant.routeMind().breakDown(text(c, "vehicleId"));
+      case "vehicleRepair" -> plant.routeMind().repair(text(c, "vehicleId"));
+      case "vehicleMaintenance" -> plant.routeMind().setMaintenance(text(c, "vehicleId"), bool(c, "on"));
+      case "replanDeliveries" -> plant.routeMind().replan();
       case "setRules" -> plant.setRules(rules(plant.rules(), c));
       case "runScenario" -> {
         String runId = plant.startScenario(text(c, "scenario"));

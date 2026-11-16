@@ -1,10 +1,12 @@
 package io.nexus.plant;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import io.nexus.contracts.Domain.Priority;
+import io.nexus.contracts.Domain.TransportKind;
+import io.nexus.contracts.Place;
 import io.nexus.contracts.event.EventTypes;
 import io.nexus.contracts.event.NexusEvent;
+import io.nexus.contracts.event.Payloads;
+import io.nexus.contracts.state.DeliveryStatus;
 import io.nexus.contracts.state.OrderStatus;
 import io.nexus.contracts.state.TransportStatus;
 import io.nexus.flowpilot.store.StockLine;
@@ -18,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class PlantEndToEndTest {
   static final PlantRules QUIET = new PlantRules(new SimRules(false, true, false, 0.85), false, 360_000, 6, false,
@@ -191,5 +194,44 @@ class PlantEndToEndTest {
       assertThat(o.priority()).isEqualTo("EILIG");
     });
     assertThat(f.stock()).isNotEmpty();
+  }
+
+  @Test
+  void productionOrderIsDeliveredToTheCustomer() {
+    Plant plant = Plant.inMemory(4711, Scenario1h.rules());
+    String id = plant.smartFactory().createOrder(new NewOrder("FP12", 4, Priority.HOCH, 60 * 60_000L));
+    for (int minute = 0; minute < 8 * 60; minute++) {
+      if (plant.routeMind().deliveryOfOrder(id).status() == DeliveryStatus.DELIVERED) break;
+      plant.advance(60_000);
+    }
+    assertThat(plant.routeMind().deliveryOfOrder(id).status()).isEqualTo(DeliveryStatus.DELIVERED);
+    List<String> chain = new ArrayList<>();
+    for (NexusEvent e : plant.events()) {
+      if (id.equals(e.correlationId()) && e.type().equals(EventTypes.DELIVERY_STATE)) {
+        chain.add(((Payloads.DeliveryStateChanged) e.payload()).to().name());
+      }
+    }
+    assertThat(chain).containsSubsequence("AWAITING_GOODS", "READY_TO_LOAD", "LOADED", "IN_TRANSIT", "DELIVERED");
+    assertThat(plant.events()).anySatisfy(e -> {
+      assertThat(e.type()).isEqualTo(EventTypes.TRANSPORT_DELIVERED);
+      var d = (Payloads.TransportDelivered) e.payload();
+      assertThat(d.kind()).isEqualTo(TransportKind.SHIPMENT);
+      assertThat(d.orderId()).isEqualTo(id);
+      assertThat(d.to()).isEqualTo(Place.loading("LZ-1"));
+    });
+  }
+
+  @Test
+  void sameSeedSameDeliveryEvents() {
+    List<String> a = new ArrayList<>();
+    List<String> b = new ArrayList<>();
+    for (List<String> out : List.of(a, b)) {
+      Plant plant = Plant.inMemory(99, PlantRules.DEFAULT);
+      plant.advance(3 * 3_600_000L);
+      for (NexusEvent e : plant.events()) {
+        if (e.source().equals("routemind")) out.add(PlantJson.event(e, false));
+      }
+    }
+    assertThat(a).isNotEmpty().isEqualTo(b);
   }
 }

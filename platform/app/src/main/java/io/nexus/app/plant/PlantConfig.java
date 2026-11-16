@@ -10,6 +10,7 @@ import io.nexus.flowpilot.FlowPilot;
 import io.nexus.plant.Plant;
 import io.nexus.plant.PlantRules;
 import io.nexus.plant.machines.MachineGateway;
+import io.nexus.routemind.RouteMind;
 import io.nexus.smartfactory.SmartFactory;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
@@ -24,8 +25,8 @@ class PlantConfig {
   @Bean
   @DependsOnDatabaseInitialization
   Plant plant(EventBus bus, SimTime time, SimRun run, FlowPilot flowPilot, SmartFactory smartFactory,
-              MachineGateway machines) {
-    return new Plant(bus, time, run.seed(), flowPilot, smartFactory, machines, PlantRules.DEFAULT);
+              RouteMind routeMind, MachineGateway machines) {
+    return new Plant(bus, time, run.seed(), flowPilot, smartFactory, routeMind, machines, PlantRules.DEFAULT);
   }
 
   /** The clock of the plant; starts paused. A step that throws pauses it and is reported as an error event. */

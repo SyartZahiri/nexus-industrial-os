@@ -120,7 +120,7 @@ function RulesPart() {
         </div>
         <div>
           <Toggle label="Automatische Aufträge" hint="neue Aufträge in festem Abstand" checked={edited.autoOrders} onChange={(v) => set('autoOrders', v)} />
-          <Toggle label="Versand" hint="Fertigware verlässt das Lager" checked={edited.shipping} onChange={(v) => set('shipping', v)} />
+          <Toggle label="Auslieferung" hint="RouteMind liefert Fertigware an die Kunden" checked={edited.shipping} onChange={(v) => set('shipping', v)} />
           <div className="mt-2 grid grid-cols-2 gap-4">
             <WholeField label="Abstand" unit="min" value={edited.autoOrderIntervalMinutes} min={1} max={120} onChange={(v) => set('autoOrderIntervalMinutes', v)} />
             <WholeField label="Offen höchstens" unit="Aufträge" value={edited.maxOpenOrders} min={1} max={30} onChange={(v) => set('maxOpenOrders', v)} />

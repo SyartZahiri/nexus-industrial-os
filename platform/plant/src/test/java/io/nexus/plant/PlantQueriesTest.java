@@ -1,10 +1,10 @@
 package io.nexus.plant;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import io.nexus.contracts.json.JsonReader;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class PlantQueriesTest {
   @SuppressWarnings("unchecked")
@@ -119,5 +119,23 @@ class PlantQueriesTest {
     assertThat(buckets.get(0)).containsEntry("fromMs", 0L).containsEntry("toMs", 300_000L);
     assertThat(buckets.get(2)).containsEntry("fromMs", 900_000L).containsEntry("toMs", 1_500_000L);
     assertThat(answer(plant, "{\"query\":\"kpiSeries\",\"bucketMinutes\":0}")).containsEntry("status", 400L);
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void routemindListsDeliveriesToursVehiclesPlansAndKpis() {
+    Plant p = Plant.inMemory(4711, PlantRules.DEFAULT);
+    p.advance(2 * 3_600_000L);
+    var answer = (Map<String, Object>) JsonReader.parse(PlantQueries.apply(p, "{\"query\":\"routemind\"}"));
+    assertThat(answer).containsEntry("ok", true);
+    var r = (Map<String, Object>) answer.get("result");
+    assertThat((String) r.get("attribution")).contains("OpenStreetMap");
+    assertThat((List<Object>) r.get("vehicles")).hasSize(4);
+    assertThat((List<Map<String, Object>>) r.get("deliveries")).isNotEmpty()
+        .allSatisfy(d -> assertThat(d).containsKeys("id", "orderId", "customerId", "customerName", "status",
+            "earliestMs", "latestMs", "plannedArrivalMs", "deliveredAtMs", "weightKg", "pallets"));
+    assertThat((Map<String, Object>) r.get("kpis")).containsKeys("activeTours", "utilization", "delivered", "onTime",
+        "avgDelayMinutes", "failed", "open", "km", "cost");
+    assertThat((List<Object>) r.get("plans")).isNotEmpty();
   }
 }
