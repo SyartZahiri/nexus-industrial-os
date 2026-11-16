@@ -10,13 +10,13 @@ export default defineConfig({
     {
       command: 'node scripts/run-server.mjs',
       url: 'http://localhost:8080/api/v1/sim',
-      reuseExistingServer: true,
+      reuseExistingServer: !process.env.CI, // in CI Playwright always starts its own servers
       timeout: 300_000,
     },
     {
       command: 'npm run dev -- --mode server --port 5179 --strictPort',
       url: 'http://localhost:5179',
-      reuseExistingServer: true,
+      reuseExistingServer: !process.env.CI, // in CI Playwright always starts its own servers
       timeout: 120_000,
     },
   ],
