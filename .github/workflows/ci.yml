@@ -1,0 +1,90 @@
+# Spec 17: backend build and tests, frontend typecheck, tests and build, Playwright against the running backend.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Maven verify)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Build and test (embedded PostgreSQL, OPC UA, TeaVM, JVM/JS equivalence)
+        run: ./mvnw -B verify
+
+  frontend:
+    name: Frontend (core, tests, typecheck, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: FactoryTwin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: FactoryTwin/package-lock.json
+      - run: npm ci
+      - name: Java core for the browser (TeaVM)
+        run: npm run core
+      - run: npx vitest run
+      - run: npx tsc -b --noEmit
+      - run: npx vite build
+
+  e2e:
+    name: Playwright (browser and server mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: FactoryTwin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: FactoryTwin/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run core
+      - name: Browser mode (core in a web worker)
+        run: npm run e2e
+      - name: Server mode (Spring Boot, PostgreSQL, OPC UA)
+        run: npm run e2e:server
+      - name: Test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: FactoryTwin/test-results
+          retention-days: 7

@@ -20,7 +20,7 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev -- --port 5173 --strictPort',
     url: 'http://localhost:5173',
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI, // in CI Playwright always starts its own servers
     timeout: 120_000,
   },
 });
