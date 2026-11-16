@@ -191,7 +191,7 @@ class ScenariosTest {
   }
 
   @Test
-  void aFailingInterventionLeavesNoRunBehind() {
+  void aFailingInterventionIsRecordedAndBlocksNothing() {
     Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
     Scenarios sc = p.scenarios();
     Scenarios.Run broken = sc.new Run() {
@@ -210,7 +210,12 @@ class ScenariosTest {
     };
     org.assertj.core.api.Assertions.assertThatThrownBy(() -> sc.begin(Scenarios.DEFINITIONS.get(4), broken, 0))
         .hasMessage("Eingriff gescheitert");
-    assertThat(runs(p)).isEmpty();
-    assertThat(start(p, "E")).containsEntry("ok", true).extractingByKey("result").asString().contains("SZ-1");
+    // the attempt stays visible as FAILED with its reason, so a partly applied intervention can be traced …
+    assertThat(runs(p)).singleElement().satisfies(r -> {
+      assertThat(r).containsEntry("state", "FAILED");
+      assertThat(texts(r)).last().asString().contains("Eingriff gescheitert");
+    });
+    // … and, being finished, it blocks nothing
+    assertThat(start(p, "E")).containsEntry("ok", true).extractingByKey("result").asString().contains("SZ-2");
   }
 }

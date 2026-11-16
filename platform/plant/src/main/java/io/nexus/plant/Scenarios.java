@@ -88,17 +88,23 @@ final class Scenarios {
   }
 
   /**
-   * Runs the intervention first and lists the run only when it succeeded: a failed intervention throws to the caller
-   * and leaves no run behind that would block every further start until its time limit.
+   * Lists the run, then intervenes. If the intervention fails (perhaps after part of it took effect, e.g. stock
+   * booked out), the run is finished as FAILED with the reason, so the attempt stays traceable, and the error goes to
+   * the caller. A finished run blocks no further start.
    */
   String begin(Definition def, Run run, long now) {
     run.def = def;
-    run.runId = "SZ-" + (counter + 1);
+    run.runId = "SZ-" + (++counter);
     run.startedAtMs = now;
-    run.begin(now);
-    counter++;
     runs.add(0, run);
     while (runs.size() > KEEP) runs.remove(runs.size() - 1);
+    try {
+      run.begin(now);
+    } catch (RuntimeException e) {
+      String type = e.getClass().getName();
+      finish(run, now, false, "Eingriff gescheitert (" + type.substring(type.lastIndexOf('.') + 1) + ")");
+      throw e;
+    }
     return run.runId;
   }
 
