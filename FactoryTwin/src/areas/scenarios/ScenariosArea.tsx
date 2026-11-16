@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ScenarioList, ScenarioRun } from '../../nexus/types';
 import { usePlantQuery } from '../../nexus/usePlantQuery';
 import { hrefOf } from '../../shell/route';
-import { send, useFactory } from '../../store/factoryStore';
+import { send, twin, useFactory } from '../../store/factoryStore';
 import { clock, SCENARIO_STATE } from '../../ui/format';
 import { CodeTag, Section } from '../../ui/kit';
 import { Button } from '../../ui/primitives';
-import { activeRun, lastRunOf } from './scenarioView';
+import { activeRun, lastRunOf, runTiming } from './scenarioView';
 
 const link = 'text-[12px] text-txt-2 underline decoration-line-2 underline-offset-4 hover:text-txt-1';
 
@@ -26,28 +26,34 @@ function RunSteps({ run }: { run: ScenarioRun }) {
 /** Spec 15: five scripted interventions, started here and watched by the core until they pass or time out. */
 export function ScenariosArea() {
   const running = useFactory((s) => s.sim.running);
-  const { data, reload } = usePlantQuery<ScenarioList>({ query: 'scenarios' }, 1_000);
+  const { data, error, reload } = usePlantQuery<ScenarioList>({ query: 'scenarios' }, 1_000);
   const active = activeRun(data);
+  const nowMs = twin.latest?.simTimeMs ?? 0;
+  const limitOf = (id: string) => data?.definitions.find((d) => d.id === id)?.limitMinutes ?? 0;
   const [busy, setBusy] = useState(false);
+  const status = useRef<HTMLParagraphElement>(null);
   const startScenario = async (id: string) => {
     setBusy(true);
     try {
-      await send({ command: 'runScenario', scenario: id }); // a refusal (409, 404) shows its reason in the notice line
+      const ok = await send({ command: 'runScenario', scenario: id }); // a refusal (409, 404) shows its reason in the notice line
       reload();
+      if (ok) status.current?.focus(); // the pressed button is now disabled: keep focus on the line that says why
     } finally {
       setBusy(false);
     }
   };
   return (
     <div className="flex flex-col gap-10 px-4 py-6 lg:px-6 lg:py-8">
-      {!running && (
-        <p className="text-[13px] text-txt-2">
-          Die Simulation ist pausiert. Szenarien laufen in der Simulationszeit; starte die Simulation oben, Tempo 25× verkürzt das Warten.
-        </p>
-      )}
+      <p ref={status} tabIndex={-1} aria-live="polite" className="min-h-5 max-w-[72ch] text-[13px] text-txt-2 outline-none">
+        {active
+          ? `Szenario ${active.scenario} läuft (${runTiming(active, nowMs, limitOf(active.scenario))}); die anderen warten, bis es bestanden ist oder nicht.`
+          : !running
+            ? 'Die Simulation ist pausiert. Szenarien laufen in der Simulationszeit; starte die Simulation oben, Tempo 25× verkürzt das Warten.'
+            : ''}
+      </p>
       <Section title="Szenarien">
         {!data ? (
-          <p className="text-[13px] text-txt-3">Szenarien werden geladen …</p>
+          <p className="text-[13px] text-txt-3">{error ?? 'Szenarien werden geladen …'}</p>
         ) : (
           <ul className="flex flex-col">
             {data.definitions.map((d) => {
@@ -60,7 +66,10 @@ export function ScenariosArea() {
                 >
                   <div className="min-w-0">
                     <h3 className="text-[15px] font-semibold text-txt-1">
-                      <span className="mr-2 font-mono text-txt-3">{d.id}</span>
+                      <span className="mr-2 font-mono text-txt-3" aria-hidden="true">
+                        {d.id}
+                      </span>
+                      <span className="sr-only">Szenario {d.id}: </span>
                       {d.title}
                     </h3>
                     <p className="mt-1 text-[13px] text-txt-2">Auslöser: {d.trigger}</p>
@@ -69,7 +78,10 @@ export function ScenariosArea() {
                   </div>
                   <div className="flex flex-col gap-1">
                     {last ? (
-                      <CodeTag map={SCENARIO_STATE} code={last.state} />
+                      <>
+                        <CodeTag map={SCENARIO_STATE} code={last.state} />
+                        <span className="font-mono text-[12px] text-txt-3 tnum">{runTiming(last, nowMs, d.limitMinutes)}</span>
+                      </>
                     ) : (
                       <span className="text-[12px] text-txt-3">Noch nicht gelaufen</span>
                     )}
@@ -84,7 +96,7 @@ export function ScenariosArea() {
                       </span>
                     )}
                   </div>
-                  <Button onClick={() => void startScenario(d.id)} disabled={busy || active !== null}>
+                  <Button onClick={() => void startScenario(d.id)} disabled={busy || active !== null} aria-label={`Szenario ${d.id} starten`}>
                     Starten
                   </Button>
                 </li>
@@ -108,7 +120,9 @@ export function ScenariosArea() {
                       {r.scenario} {d?.title}
                     </span>
                     <CodeTag map={SCENARIO_STATE} code={r.state} />
-                    <span className="font-mono text-[12px] text-txt-3 tnum">ab {clock(r.startedAtMs / 1000)}</span>
+                    <span className="font-mono text-[12px] text-txt-3 tnum">
+                      ab {clock(r.startedAtMs / 1000)} · {runTiming(r, nowMs, limitOf(r.scenario))}
+                    </span>
                   </div>
                   <RunSteps run={r} />
                 </li>

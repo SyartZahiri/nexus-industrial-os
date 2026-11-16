@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ScenarioList, ScenarioRun } from '../../nexus/types';
-import { activeRun, lastRunOf } from './scenarioView';
+import { activeRun, lastRunOf, runTiming } from './scenarioView';
 
 const run = (runId: string, scenario: string, state: ScenarioRun['state']): ScenarioRun => ({
   runId,
@@ -25,5 +25,12 @@ describe('scenario view', () => {
     const l = list([run('SZ-3', 'A', 'FAILED'), run('SZ-2', 'B', 'PASSED'), run('SZ-1', 'A', 'PASSED')]);
     expect(lastRunOf(l, 'A')?.runId).toBe('SZ-3');
     expect(lastRunOf(l, 'E')).toBeNull();
+  });
+
+  it('aRunningScenarioSaysHowLongItRunsAndItsLimit', () => {
+    const r = { ...run('SZ-1', 'E', 'RUNNING' as const), startedAtMs: 60_000 };
+    expect(runTiming(r, 12 * 60_000 + 30_000, 360)).toBe('seit 11 min · Grenze 360 min');
+    expect(runTiming({ ...r, state: 'PASSED', finishedAtMs: 31 * 60_000 }, 99 * 60_000, 360)).toBe('nach 30 min');
+    expect(runTiming(r, 30_000, 360)).toBe('seit 0 min · Grenze 360 min'); // a clock behind the start never shows a negative time
   });
 });

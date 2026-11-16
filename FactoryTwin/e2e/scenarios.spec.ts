@@ -29,7 +29,7 @@ for (const [id, title] of SCENARIOS) {
     test.setTimeout(id === 'E' ? 20 * 60_000 : 8 * 60_000);
     await freshPlant(page);
     const row = page.getByRole('listitem', { name: `Szenario ${id}: ${title}` });
-    await row.getByRole('button', { name: 'Starten' }).click();
+    await row.getByRole('button', { name: `Szenario ${id} starten` }).click();
     // E needs up to six simulated hours: at 25× that is under 15 real minutes, usually far less
     await expect(row.getByText('Bestanden', { exact: true })).toBeVisible({ timeout: id === 'E' ? 15 * 60_000 : 6 * 60_000 });
 
