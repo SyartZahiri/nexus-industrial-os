@@ -69,6 +69,8 @@ public final class RouteMind {
   public static final long LOADING_LEAD_MS = 15 * MIN;
   public static final long SERVICE_MS = 10 * MIN;
   public static final long READY_BUFFER_MS = 10 * MIN;
+  /** Goods expected up to this long before departure still go into the wave: loading goes on until departure. */
+  public static final long LAST_GOODS_MS = 5 * MIN;
   public static final long REPAIR_MS = 60 * MIN;
   /** The first attempt and at most two more (Spec 15a). */
   public static final int MAX_ATTEMPTS = 3;
@@ -291,7 +293,7 @@ public final class RouteMind {
     plan(wave, "Neuplanung: " + reason, before);
   }
 
-  /** Plans wave `wave`: ready goods and goods expected before loading starts, on the vehicles that are back. */
+  /** Plans wave `wave`: ready goods and goods expected up to LAST_GOODS_MS before departure, on vehicles back by then. */
   private void plan(long wave, String trigger, Payloads.PlanFigures replaced) {
     replanNeeded = false;
     replanReason = null;
@@ -313,7 +315,7 @@ public final class RouteMind {
     for (Delivery d : store.deliveries()) {
       if (d.tourId() != null && onOpenTour(d)) continue;
       if (d.status() == DeliveryStatus.READY_TO_LOAD
-          || (d.status() == DeliveryStatus.AWAITING_GOODS && expectedReady(d, now) <= wave - LOADING_LEAD_MS)) {
+          || (d.status() == DeliveryStatus.AWAITING_GOODS && expectedReady(d, now) <= wave - LAST_GOODS_MS)) {
         candidates.add(d);
       }
     }

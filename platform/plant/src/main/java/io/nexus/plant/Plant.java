@@ -94,7 +94,7 @@ public final class Plant {
     this.machines = machines;
     this.orders = new OrderGenerator(new SeededRandom(seed).fork("orders"));
     this.memoryLog = memoryLog;
-    this.scenarios = new Scenarios(smartFactory, flowPilot, bus);
+    this.scenarios = new Scenarios(smartFactory, flowPilot, routeMind, bus);
     machines.reset(seed);
     applyRules(rules);
   }

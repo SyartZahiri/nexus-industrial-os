@@ -48,11 +48,11 @@ class ScenariosTest {
 
   @Test
   @SuppressWarnings("unchecked")
-  void listsTheFiveScenarios() {
+  void listsTheTenScenarios() {
     Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
     var result = (Map<String, Object>) answer(PlantQueries.apply(p, "{\"query\":\"scenarios\"}")).get("result");
     assertThat((List<Map<String, Object>>) result.get("definitions")).extracting(d -> d.get("id"))
-        .containsExactly("A", "B", "C", "D", "E");
+        .containsExactly("A", "B", "C", "D", "E", "F", "G", "H", "I", "J");
     assertThat(runs(p)).isEmpty();
   }
 
@@ -241,5 +241,52 @@ class ScenariosTest {
         .isInstanceOf(StackOverflowError.class);
     assertThat(runs(p)).singleElement().extracting(r -> r.get("state")).isEqualTo("FAILED");
     assertThat(start(p, "E")).containsEntry("ok", true); // nothing left active that would answer 409
+  }
+
+  @Test
+  void aProductionDelayKeepsTheUnfinishedGoodsOffTheTour() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    assertThat(start(p, "F")).containsEntry("ok", true);
+    var run = untilDone(p, 6 * 60 * MIN);
+    assertThat(run).containsEntry("state", "PASSED");
+    assertThat(texts(run)).anyMatch(t -> t.contains("angehalten"));
+    assertThat(p.machines().views()).noneSatisfy(m ->
+        assertThat(m.status()).isEqualTo(io.nexus.contracts.state.MachineStatus.STOPPED)); // restarted at the end
+  }
+
+  @Test
+  void aVehicleBreakdownLeadsToANewTour() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    assertThat(start(p, "G")).containsEntry("ok", true);
+    var run = untilDone(p, 6 * 60 * MIN);
+    assertThat(run).containsEntry("state", "PASSED");
+    assertThat(texts(run)).anyMatch(t -> t.contains("Panne"));
+  }
+
+  @Test
+  void anExpressOrderGetsADeliveryPlan() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    assertThat(start(p, "H")).containsEntry("ok", true);
+    var run = untilDone(p, 3 * 60 * MIN);
+    assertThat(run).containsEntry("state", "PASSED");
+    assertThat(texts(run)).anyMatch(t -> t.contains("Tour"));
+  }
+
+  @Test
+  void aShortageLeavesTheDeliveryWithoutDate() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    assertThat(start(p, "I")).containsEntry("ok", true);
+    var run = untilDone(p, 2 * 60 * MIN);
+    assertThat(run).containsEntry("state", "PASSED");
+  }
+
+  @Test
+  void theWholeSupplyChainEndsWithTheDelivery() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    assertThat(start(p, "J")).containsEntry("ok", true);
+    var run = untilDone(p, 10 * 60 * MIN);
+    assertThat(run).containsEntry("state", "PASSED");
+    assertThat(texts(run)).anyMatch(t -> t.contains("eingelagert")).anyMatch(t -> t.contains("verladen"))
+        .anyMatch(t -> t.contains("zugestellt"));
   }
 }

@@ -8,13 +8,19 @@ import io.nexus.contracts.event.EventBus;
 import io.nexus.contracts.event.EventTypes;
 import io.nexus.contracts.event.Payloads;
 import io.nexus.contracts.json.JsonWriter;
+import io.nexus.contracts.port.ProductCatalog.MaterialDemand;
+import io.nexus.contracts.state.DeliveryStatus;
 import io.nexus.contracts.state.MachineStatus;
 import io.nexus.contracts.state.OrderStatus;
+import io.nexus.contracts.state.TourStatus;
 import io.nexus.contracts.state.TransportStatus;
-import io.nexus.contracts.port.ProductCatalog.MaterialDemand;
+import io.nexus.contracts.state.VehicleStatus;
 import io.nexus.flowpilot.FlowPilot;
 import io.nexus.flowpilot.store.StockLine;
 import io.nexus.flowpilot.store.TransportOrder;
+import io.nexus.routemind.RouteMind;
+import io.nexus.routemind.store.Delivery;
+import io.nexus.routemind.store.Tour;
 import io.nexus.smartfactory.SmartFactory;
 import io.nexus.smartfactory.master.SmartFactoryMasterData;
 import io.nexus.smartfactory.orders.NewOrder;
@@ -54,17 +60,30 @@ final class Scenarios {
       new Definition("D", "Expressauftrag", "Auftrag mit Priorität eilig",
           "Neuplanung, verschobene Aufträge mit ihrer Verspätung", 5 * MIN),
       new Definition("E", "Kompletter Durchlauf", "Neuer Auftrag",
-          "Reservierung bis Einlagerung, als Schrittfolge sichtbar", 6 * 60 * MIN));
+          "Reservierung bis Einlagerung, als Schrittfolge sichtbar", 6 * 60 * MIN),
+      new Definition("F", "Produktionsverzögerung",
+          "Die letzte Maschine eines Auftrags mit geplanter Lieferung steht, bis die Tour abfährt",
+          "Die Tour fährt nicht mit der unfertigen Ware: Neuplanung oder Abfahrt ohne sie", 6 * 60 * MIN),
+      new Definition("G", "Ausfall eines Lieferfahrzeugs", "Panne eines beladenen Lieferfahrzeugs unterwegs",
+          "Tour unterbrochen, offene Lieferungen in einer neuen Tour geplant", 6 * 60 * MIN),
+      new Definition("H", "Expressauftrag bis zur Lieferplanung", "Eilauftrag",
+          "Lieferung in einer der nächsten Wellen geplant", 3 * 60 * MIN),
+      new Definition("I", "Materialengpass und Liefertermin", "Auftrag über Bestand",
+          "Auftrag in SHORTAGE, die Lieferung bekommt keinen Termin", 2 * 60 * MIN),
+      new Definition("J", "Vollständige Lieferkette", "Neuer Auftrag",
+          "Reservierung, Fertigung, Einlagerung, Verladung, Zustellung als Schrittfolge", 10 * 60 * MIN));
 
   private final SmartFactory sf;
   private final FlowPilot fp;
+  private final RouteMind rm;
   private final EventBus bus;
   private final List<Run> runs = new ArrayList<>(); // newest first
   private int counter;
 
-  Scenarios(SmartFactory sf, FlowPilot fp, EventBus bus) {
+  Scenarios(SmartFactory sf, FlowPilot fp, RouteMind rm, EventBus bus) {
     this.sf = sf;
     this.fp = fp;
+    this.rm = rm;
     this.bus = bus;
   }
 
@@ -82,6 +101,11 @@ final class Scenarios {
       case "C" -> new Shortage();
       case "D" -> new Express();
       case "E" -> new FullRun();
+      case "F" -> new ProductionDelay();
+      case "G" -> new VehicleBreakdown();
+      case "H" -> new ExpressDelivery();
+      case "I" -> new ShortageDelivery();
+      case "J" -> new SupplyChain();
       default -> throw DomainException.notFound("Szenario", scenarioId);
     };
     return begin(def, run, now);
@@ -173,6 +197,7 @@ final class Scenarios {
   }
 
   private void finish(Run run, long now, boolean passed, String text) {
+    run.end();
     run.state = passed ? State.PASSED : State.FAILED;
     run.finishedAtMs = now;
     note(run, now, text);
@@ -200,6 +225,9 @@ final class Scenarios {
     abstract void check(long now);
 
     abstract String timeoutReason();
+
+    /** Undoes the intervention when the run ends, also by timeout. */
+    void end() {}
   }
 
   /**
@@ -327,37 +355,17 @@ final class Scenarios {
 
   /** C: stock of the first material lowered to half of what a new order needs; passes when the order waits in SHORTAGE. */
   final class Shortage extends Run {
-    private String material;
 
     @Override
     void begin(long now) {
-      String product = SmartFactoryMasterData.products().get(0).id();
-      int quantity = 10;
-      List<MaterialDemand> demand = sf.catalog().demandFor(product, quantity);
-      material = demand.get(0).materialId();
-      int need = 0;
-      for (MaterialDemand d : demand) if (d.materialId().equals(material)) need += d.quantity();
-      int keep = need / 2;
-      int available = 0;
-      for (StockLine l : fp.stock()) if (l.materialId().equals(material)) available += l.available();
-      int remove = Math.max(0, available - keep); // never more than is available: stock stays at or above zero
-      for (StockLine l : fp.stock()) {
-        if (remove == 0) break;
-        if (!l.materialId().equals(material) || l.available() <= 0) continue;
-        int take = Math.min(remove, l.available());
-        fp.issue(material, l.locationId(), take);
-        remove -= take;
-      }
-      String id = sf.createOrder(new NewOrder(product, quantity, Priority.NORMAL, 4 * 60 * MIN));
-      started(this, now, id, "Bestand von " + material + " auf " + Math.min(available, keep) + " gesenkt, Auftrag " + id
-          + " braucht " + need);
+      lowerStockAndOrder(this, now);
     }
 
     @Override
     void check(long now) {
       OrderStatus s = sf.order(orderId).status();
       if (s == OrderStatus.SHORTAGE) {
-        finish(this, now, true, "Keine Reservierung, Auftrag wartet auf Wareneingang von " + material);
+        finish(this, now, true, "Keine Reservierung, Auftrag wartet auf den Wareneingang");
       } else if (s == OrderStatus.RELEASED || s == OrderStatus.IN_PROGRESS || s == OrderStatus.COMPLETED) {
         finish(this, now, false, "Auftrag wurde ohne Engpass freigegeben");
       }
@@ -452,6 +460,237 @@ final class Scenarios {
     String timeoutReason() {
       return "Auftrag " + orderId + " steht bei " + word(last);
     }
+  }
+
+  /** C's intervention: stock of the first material down to half of a new order's need, then that order. */
+  private void lowerStockAndOrder(Run run, long now) {
+    String product = SmartFactoryMasterData.products().get(0).id();
+    int quantity = 10;
+    List<MaterialDemand> demand = sf.catalog().demandFor(product, quantity);
+    String material = demand.get(0).materialId();
+    int need = 0;
+    for (MaterialDemand d : demand) if (d.materialId().equals(material)) need += d.quantity();
+    int keep = need / 2;
+    int available = 0;
+    for (StockLine l : fp.stock()) if (l.materialId().equals(material)) available += l.available();
+    int remove = Math.max(0, available - keep); // never more than is available: stock stays at or above zero
+    for (StockLine l : fp.stock()) {
+      if (remove == 0) break;
+      if (!l.materialId().equals(material) || l.available() <= 0) continue;
+      int take = Math.min(remove, l.available());
+      fp.issue(material, l.locationId(), take);
+      remove -= take;
+    }
+    String id = sf.createOrder(new NewOrder(product, quantity, Priority.NORMAL, 4 * 60 * MIN));
+    started(run, now, id, "Bestand von " + material + " auf " + Math.min(available, keep) + " gesenkt, Auftrag " + id
+        + " braucht " + need);
+  }
+
+  /** F: an order whose delivery is already planned; its last machine is stopped until that tour leaves. */
+  final class ProductionDelay extends Run {
+    private String tourId;
+    private String machineId;
+
+    @Override
+    void begin(long now) {
+      String product = SmartFactoryMasterData.products().get(0).id();
+      String id = sf.createOrder(new NewOrder(product, 2, Priority.HOCH, 90 * MIN));
+      started(this, now, id, "Auftrag " + id + " angelegt, wartet auf seine Lieferplanung");
+    }
+
+    @Override
+    void check(long now) {
+      Delivery d = rm.deliveryOfOrder(orderId);
+      if (tourId == null) {
+        if (d.tourId() == null && sf.order(orderId).status().terminal()) {
+          // finished before any wave counted on it: nothing to delay, so try again with a new order
+          String product = SmartFactoryMasterData.products().get(0).id();
+          String next = sf.createOrder(new NewOrder(product, 2, Priority.HOCH, 90 * MIN));
+          note(this, now, "Auftrag " + orderId + " war vor seiner Lieferplanung fertig, neuer Auftrag " + next);
+          orderId = next;
+          return;
+        }
+        if (d.tourId() == null || d.status() != DeliveryStatus.AWAITING_GOODS) return;
+        List<Operation> ops = sf.operations(orderId);
+        Operation last = ops.get(ops.size() - 1);
+        if (last.machineId() == null || last.status() == Operation.Status.DONE) return;
+        tourId = d.tourId();
+        machineId = last.machineId();
+        sf.stopMachine(machineId);
+        note(this, now, "Lieferung " + d.id() + " in Tour " + tourId + " geplant; " + machineId + " angehalten");
+        return;
+      }
+      Tour t = tour(tourId);
+      if (t.status() == TourStatus.PLANNED || t.status() == TourStatus.LOADING) return;
+      boolean onBoard = tourId.equals(d.tourId()) && d.status() != DeliveryStatus.AWAITING_GOODS;
+      if (onBoard) finish(this, now, false, "Tour " + tourId + " fuhr mit Lieferung " + d.id() + " ab");
+      else if (t.status() == TourStatus.REPLANNED) finish(this, now, true, "Tour " + tourId + " neu geplant");
+      else finish(this, now, true, "Tour " + tourId + " fuhr ohne die unfertige Lieferung " + d.id() + " ab");
+    }
+
+    @Override
+    void end() {
+      if (machineId != null) sf.startMachine(machineId);
+    }
+
+    @Override
+    String timeoutReason() {
+      return tourId == null ? "Lieferung von " + orderId + " wurde nie vor der Fertigstellung geplant"
+          : "Tour " + tourId + " fuhr nicht ab";
+    }
+  }
+
+  /** G: the first loaded vehicle under way breaks down; its open deliveries must get a new tour. */
+  final class VehicleBreakdown extends Run {
+    private String tourId;
+    private final List<String> open = new ArrayList<>();
+
+    @Override
+    void begin(long now) {
+      // waits in check() for a vehicle under way
+    }
+
+    @Override
+    void check(long now) {
+      if (tourId == null) {
+        for (RouteMind.TruckView v : rm.trucks()) {
+          if (v.status() != VehicleStatus.EN_ROUTE) continue;
+          Tour t = tour(v.tourId());
+          for (Tour.Stop s : t.stops()) {
+            Delivery d = delivery(s.deliveryId());
+            if (d.status() == DeliveryStatus.IN_TRANSIT) open.add(d.id());
+          }
+          if (open.isEmpty()) continue;
+          tourId = t.id();
+          rm.breakDown(v.id());
+          started(this, now, delivery(open.get(0)).orderId(), "Panne an " + v.id() + " auf Tour " + tourId + ", "
+              + open.size() + " Lieferungen offen");
+          return;
+        }
+        return;
+      }
+      for (String id : open) {
+        Delivery d = delivery(id);
+        boolean replanned = d.status() == DeliveryStatus.DELIVERED
+            || (d.tourId() != null && !d.tourId().equals(tourId));
+        if (!replanned) return;
+      }
+      finish(this, now, true, "Offene Lieferungen in neuen Touren: " + String.join(", ", open));
+    }
+
+    @Override
+    String timeoutReason() {
+      return tourId == null ? "Kein Lieferfahrzeug war unterwegs; läuft die Simulation mit Aufträgen?"
+          : "Lieferungen von Tour " + tourId + " wurden nicht neu geplant";
+    }
+  }
+
+  /** H: an urgent order; passes once its delivery is on a tour. */
+  final class ExpressDelivery extends Run {
+    @Override
+    void begin(long now) {
+      String product = SmartFactoryMasterData.products().get(0).id();
+      String id = sf.createOrder(new NewOrder(product, 2, Priority.EILIG, 45 * MIN));
+      started(this, now, id, "Eilauftrag " + id + " angelegt");
+    }
+
+    @Override
+    void check(long now) {
+      Delivery d = rm.deliveryOfOrder(orderId);
+      if (d.tourId() == null) return;
+      Tour t = tour(d.tourId());
+      finish(this, now, true, "Lieferung " + d.id() + " in Tour " + t.id() + ", Abfahrt " + (t.departAtMs() / MIN)
+          + " min, Ankunft geplant " + (d.plannedArrivalMs() / MIN) + " min");
+    }
+
+    @Override
+    String timeoutReason() {
+      return "Lieferung von " + orderId + " wurde nicht eingeplant";
+    }
+  }
+
+  /** I: the order of C waits in SHORTAGE; its delivery gets no tour through the next wave. */
+  final class ShortageDelivery extends Run {
+    private Long shortageAt;
+
+    @Override
+    void begin(long now) {
+      lowerStockAndOrder(this, now); // the intervention of C, reported under this run
+    }
+
+    @Override
+    void check(long now) {
+      if (shortageAt == null) {
+        if (sf.order(orderId).status() != OrderStatus.SHORTAGE) return;
+        shortageAt = now;
+        note(this, now, "Auftrag in SHORTAGE");
+        return;
+      }
+      long nextWave = (shortageAt / RouteMind.WAVE_MS + 1) * RouteMind.WAVE_MS;
+      if (now < nextWave + CHECK_EVERY_MS) return;
+      Delivery d = rm.deliveryOfOrder(orderId);
+      if (d.tourId() == null) {
+        finish(this, now, true, "Lieferung " + d.id() + " ohne Termin, sie wartet auf den Wareneingang");
+      } else {
+        finish(this, now, false, "Lieferung " + d.id() + " wurde trotz Engpass geplant");
+      }
+    }
+
+    @Override
+    String timeoutReason() {
+      return "Auftrag " + orderId + " kam nicht in SHORTAGE";
+    }
+  }
+
+  /** J: the whole chain of one order up to the customer. */
+  final class SupplyChain extends Run {
+    private DeliveryStatus last;
+
+    @Override
+    void begin(long now) {
+      String product = SmartFactoryMasterData.products().get(0).id();
+      String id = sf.createOrder(new NewOrder(product, 2, Priority.HOCH, 90 * MIN));
+      started(this, now, id, "Auftrag " + id + " angelegt");
+    }
+
+    @Override
+    void check(long now) {
+      Delivery d = rm.deliveryOfOrder(orderId);
+      if (d.status() != last) {
+        last = d.status();
+        String text = switch (d.status()) {
+          case CREATED -> null;
+          case AWAITING_GOODS -> "Auftrag freigegeben, Lieferung " + d.id() + " für " + d.customerId();
+          case READY_TO_LOAD -> "Ware eingelagert und an der Verladezone";
+          case LOADED -> "Ware verladen";
+          case IN_TRANSIT -> "Tour " + d.tourId() + " abgefahren";
+          case DELIVERED -> null;
+          case FAILED -> "Zustellung gescheitert, neuer Versuch";
+          case CANCELLED -> null;
+        };
+        if (text != null) note(this, now, text);
+      }
+      if (d.status() == DeliveryStatus.DELIVERED) {
+        finish(this, now, true, "Ware zugestellt bei " + d.customerId());
+      } else if (d.status() == DeliveryStatus.CANCELLED) {
+        finish(this, now, false, "Lieferung storniert");
+      }
+    }
+
+    @Override
+    String timeoutReason() {
+      return "Lieferung von " + orderId + " steht bei " + last;
+    }
+  }
+
+  private Tour tour(String id) {
+    for (Tour t : rm.tours()) if (t.id().equals(id)) return t;
+    throw DomainException.notFound("Tour", id);
+  }
+
+  private Delivery delivery(String id) {
+    for (Delivery d : rm.deliveries()) if (d.id().equals(id)) return d;
+    throw DomainException.notFound("Lieferauftrag", id);
   }
 
   static String word(OrderStatus s) {
