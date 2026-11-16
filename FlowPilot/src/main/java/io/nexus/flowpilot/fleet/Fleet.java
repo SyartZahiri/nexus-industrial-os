@@ -344,7 +344,7 @@ public final class Fleet {
 
   private void arrivedAtPickup(Vehicle v) {
     TransportOrder t = transport(v.transportId);
-    if (t.kind() == TransportKind.SUPPLY && t.reservationId() != null && materials.released(t.reservationId())) {
+    if ((t.kind() == TransportKind.SUPPLY || t.kind() == TransportKind.SHIPMENT) && t.reservationId() != null && materials.released(t.reservationId())) {
       cancelReleased(v, t);
       return;
     }
@@ -352,7 +352,7 @@ public final class Fleet {
     work.inNewTransaction(() -> {
       moveTransport(t, TransportStatus.LOADING, v.id, EventTypes.TRANSPORT_STATE);
       // stock leaves at pickup; a reservation already consumed (rescue of a failed load) is not taken twice
-      if (t.kind() == TransportKind.SUPPLY && t.reservationId() != null) materials.consume(t.reservationId());
+      if ((t.kind() == TransportKind.SUPPLY || t.kind() == TransportKind.SHIPMENT) && t.reservationId() != null) materials.consume(t.reservationId());
       saved[0] = saveAgv(v, v.status, AgvStatus.LOADING, t.orderId());
     });
     v.status = AgvStatus.LOADING;

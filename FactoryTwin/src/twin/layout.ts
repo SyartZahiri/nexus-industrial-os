@@ -95,6 +95,25 @@ export const DETOURS: DetourDef[] = [
     },
   },
   // West connector (northbound): raw material warehouse
+  // Loading zone (RouteMind): out of the ring at the south-east corner, along the finished-goods store to the
+  // truck bays and back onto the south lane.
+  {
+    dock: 'D_LZ',
+    lane: 'S',
+    at: 19.6,
+    depth: 0,
+    custom: {
+      points: [
+        { x: 20, z: 3 },
+        { x: 23.2, z: 5.5 },
+        { x: 23.2, z: 14 },
+        { x: 22, z: 15.4 },
+        { x: 20.8, z: 14 },
+        { x: 19.3, z: 3 },
+      ],
+      dockIndex: 3,
+    },
+  },
   { dock: 'D_RAW', lane: 'W', at: 0, depth: 2.4 },
   // Cross connector X2: centre-aisle charging bay
   { dock: 'D_CH5', lane: 'X2', at: 0, depth: 1.9 },

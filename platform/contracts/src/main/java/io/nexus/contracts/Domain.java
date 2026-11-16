@@ -6,7 +6,8 @@ public final class Domain {
 
   public enum ProcessType { DREHEN, FRAESEN, MONTAGE, PRUEFEN }
   public enum Priority { NORMAL, HOCH, EILIG }
-  public enum TransportKind { SUPPLY, WIP, PUTAWAY }
+  /** SHIPMENT: finished goods from the finished-goods store to the loading zone (RouteMind). */
+  public enum TransportKind { SUPPLY, WIP, PUTAWAY, SHIPMENT }
   public enum MachineKind { CNC, ROBOT, QC }
   public enum Severity { INFO, SUCCESS, WARNING, ERROR }
 }
