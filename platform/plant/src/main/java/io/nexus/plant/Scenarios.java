@@ -98,12 +98,23 @@ final class Scenarios {
     run.startedAtMs = now;
     runs.add(0, run);
     while (runs.size() > KEEP) runs.remove(runs.size() - 1);
+    boolean begun = false;
     try {
       run.begin(now);
-    } catch (RuntimeException e) {
+      begun = true;
+    } catch (RuntimeException | Error e) {
       String type = e.getClass().getName();
-      finish(run, now, false, "Eingriff gescheitert (" + type.substring(type.lastIndexOf('.') + 1) + ")");
+      try {
+        finish(run, now, false, "Eingriff gescheitert (" + type.substring(type.lastIndexOf('.') + 1) + ")");
+      } catch (RuntimeException reportFailed) {
+        // the event could not be written; the run still ends below, and the caller gets the original error
+      }
       throw e;
+    } finally {
+      if (!begun && !run.done()) { // whatever happened, never leave an active run that blocks every start
+        run.state = State.FAILED;
+        run.finishedAtMs = now;
+      }
     }
     return run.runId;
   }

@@ -218,4 +218,28 @@ class ScenariosTest {
     // … and, being finished, it blocks nothing
     assertThat(start(p, "E")).containsEntry("ok", true).extractingByKey("result").asString().contains("SZ-2");
   }
+
+  @Test
+  void anErrorInTheInterventionStillEndsTheRun() {
+    Plant p = Plant.inMemory(7, PlantRules.DEFAULT);
+    Scenarios sc = p.scenarios();
+    Scenarios.Run deep = sc.new Run() {
+      @Override
+      void begin(long now) {
+        throw new StackOverflowError(); // an Error, not a RuntimeException
+      }
+
+      @Override
+      void check(long now) {}
+
+      @Override
+      String timeoutReason() {
+        return "";
+      }
+    };
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> sc.begin(Scenarios.DEFINITIONS.get(4), deep, 0))
+        .isInstanceOf(StackOverflowError.class);
+    assertThat(runs(p)).singleElement().extracting(r -> r.get("state")).isEqualTo("FAILED");
+    assertThat(start(p, "E")).containsEntry("ok", true); // nothing left active that would answer 409
+  }
 }
